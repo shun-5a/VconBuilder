@@ -22,6 +22,7 @@ export function AssetPanel() {
   const dir = useStore((s) => s.dir)!;
   const project = useStore((s) => s.project)!;
   const assets = useStore((s) => s.assets);
+  useStore((s) => s.assetEpoch); // re-render with the new URLs when files are replaced on disk
   const collapsed = useStore((s) => s.collapsedGroups);
   const set = useStore((s) => s.set);
   const edit = useStore((s) => s.edit);

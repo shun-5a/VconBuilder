@@ -28,6 +28,7 @@ export function loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
       })
       .catch((e) => {
         console.warn("audio decode failed", url, e);
+        buffers.delete(url); // retried on the next request (the file may still be being written)
         return null;
       });
     buffers.set(url, p);
@@ -36,6 +37,12 @@ export function loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
 }
 
 export const getDecodedBuffer = (url: string) => decoded.get(url) ?? null;
+
+/** Drops the decoded audio for a URL (the file changed on disk). */
+export function forgetAudio(url: string) {
+  buffers.delete(url);
+  decoded.delete(url);
+}
 
 // ------------------------------------------------------------ mixing
 

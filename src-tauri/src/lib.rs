@@ -208,7 +208,13 @@ fn open_project(
             if !rel.contains('/') && is_project_file(path) {
                 let _ = emitter.emit_to(target.as_str(), "fs-project-changed", ());
             } else if rel.starts_with("assets/") || rel == ASSETS_DIR {
-                let _ = emitter.emit_to(target.as_str(), "fs-assets-changed", ());
+                // The changed file (project-relative), so the UI can drop what it cached for it.
+                let changed: Vec<&str> = if rel == ASSETS_DIR {
+                    vec![]
+                } else {
+                    vec![rel.as_str()]
+                };
+                let _ = emitter.emit_to(target.as_str(), "fs-assets-changed", changed);
             }
         }
     })

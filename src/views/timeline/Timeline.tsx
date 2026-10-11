@@ -417,7 +417,9 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
   const w = Math.max(2, (e - s) * ppf);
   const ref = clipThumbRef(track, clip);
   const kind = mediaKind(ref);
-  const url = useMemo(() => (ref ? assetUrl(dir, ref) : null), [dir, ref]);
+  const assetEpoch = useStore((s) => s.assetEpoch);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: assetEpoch changes the URL of a file replaced on disk
+  const url = useMemo(() => (ref ? assetUrl(dir, ref) : null), [dir, ref, assetEpoch]);
 
   const startDrag = (ev: React.PointerEvent, mode: DragMode) => {
     if (ev.button !== 0) return;
@@ -480,7 +482,7 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
         seek(s);
       }}
     >
-      {track.kind === "audio" && url && kind === "audio" && <Waveform url={url} clip={clip} fps={fps} widthPx={w} />}
+      {track.kind === "audio" && url && kind === "audio" && <Waveform key={url} url={url} clip={clip} fps={fps} widthPx={w} />}
       {track.kind !== "audio" && url && kind === "image" && w > 40 && <img className="thumb" src={url} alt="" draggable={false} />}
       {track.kind !== "audio" && url && kind === "video" && w > 40 && (
         // The first frame the clip plays (its source offset); the media fragment makes the element show it.

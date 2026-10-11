@@ -44,9 +44,22 @@ export async function importFile(dir: string, file: File): Promise<string> {
   return rel;
 }
 
+/** Bumped when a file changes on disk, so its URL changes and nothing serves the old content. */
+const assetVersions = new Map<string, number>();
+
 /** URL the webview can load for a project-relative asset path. */
 export function assetUrl(dir: string, rel: string): string {
-  return convertFileSrc(joinPath(dir, rel));
+  const path = joinPath(dir, rel);
+  const url = convertFileSrc(path);
+  const v = assetVersions.get(path);
+  // The asset protocol ignores the query; blob: URLs (browser mock) change by themselves.
+  return v && !url.startsWith("blob:") ? `${url}?v=${v}` : url;
+}
+
+/** Marks an asset as changed on disk: later assetUrl() calls return a new URL. */
+export function bumpAssetVersion(dir: string, rel: string) {
+  const path = joinPath(dir, rel);
+  assetVersions.set(path, (assetVersions.get(path) ?? 0) + 1);
 }
 
 // Change events are sent only to the window that has the folder open.
@@ -54,8 +67,9 @@ export function onProjectFileChanged(cb: () => void): Promise<UnlistenFn> {
   return getCurrentWebviewWindow().listen("fs-project-changed", cb);
 }
 
-export function onAssetsChanged(cb: () => void): Promise<UnlistenFn> {
-  return getCurrentWebviewWindow().listen("fs-assets-changed", cb);
+/** `changed`: project-relative paths of the files that changed (empty when only the folder changed). */
+export function onAssetsChanged(cb: (changed: string[]) => void): Promise<UnlistenFn> {
+  return getCurrentWebviewWindow().listen<string[] | null>("fs-assets-changed", (e) => cb(e.payload ?? []));
 }
 
 // Untitled projects live in the app data folder until "Save to folder…".
