@@ -23,6 +23,15 @@ npm run tauri build   # installer in src-tauri/target/release/bundle/nsis/
 `npm run dev` alone runs the UI in a plain browser against an in-memory fake backend with sample assets
 (`src/dev/mockTauri.ts`).
 
+### Branches
+
+- `develop`: the main line (default branch); always builds and passes `npm test` / `npm run lint`
+- `feat/…`, `fix/…`, `chore/…`, `docs/…`: one change each, branched from `develop` and squash-merged back through a PR
+- `main`: released versions only; `develop` is merged in (merge commit) and tagged `vX.Y.Z` for each release
+- `hotfix/…`: urgent fixes branched from `main`, merged into both `main` and `develop`
+
+Commit messages are short English lines prefixed with the type (`feat: …`, `fix: …`, `chore: …`, `docs: …`).
+
 ## Features
 
 - **No save step**: every change is written to the project file immediately. The app opens straight into an

@@ -23,6 +23,15 @@ npm run tauri build   # インストーラーを src-tauri/target/release/bundle
 `npm run dev` だけを実行すると、UI を普通のブラウザで動かせます。バックエンドはメモリ上の偽物（`src/dev/mockTauri.ts`）で、
 サンプル素材が入っています。
 
+### ブランチ
+
+- `develop`：開発の本線（既定ブランチ）。常にビルドでき、`npm test` / `npm run lint` が通る状態を保つ
+- `feat/…`、`fix/…`、`chore/…`、`docs/…`：1つの変更ごとのブランチ。`develop` から作り、PR で `develop` に squash merge する
+- `main`：リリースした版だけ。リリースのたびに `develop` を merge commit で取り込み、`vX.Y.Z` のタグを付ける
+- `hotfix/…`：リリース済みの版の緊急修正。`main` から作り、`main` と `develop` の両方に取り込む
+
+コミットメッセージは短い英語で、先頭に種類を付けます（`feat: …`、`fix: …`、`chore: …`、`docs: …`）。
+
 ## 機能
 
 - **保存の操作が不要**：変更はすぐにプロジェクトファイルへ書き込まれます。アプリは「Untitled project」（アプリのデータフォルダに置かれます）で起動し、
