@@ -654,7 +654,7 @@ fn list_untitled(
             (modified, p)
         })
         .collect();
-    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.sort_by_key(|d| std::cmp::Reverse(d.0));
     Ok(dirs.into_iter().map(|(_, p)| dunce_path(&p)).collect())
 }
 

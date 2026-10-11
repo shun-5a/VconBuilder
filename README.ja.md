@@ -6,6 +6,12 @@
 参考の画像・動画とテロップを入れたビデオコンテ（Vコン）を mp4 で書き出せます。
 映像・照明・音声などのトラックはそれぞれ独立したタイミングを持つので、舞台のキューシートとしても使えます。
 
+## ダウンロード
+
+[Releases](https://github.com/shun-5a/VconBuilder/releases) から `VconBuilder_<バージョン>_x64-setup.exe` をダウンロードして実行してください
+（今のユーザーにインストールされ、`.vcb` ファイルをダブルクリックするとアプリで開くようになります）。
+インストーラーはまだコード署名していません。「Windows によって PC が保護されました」と出たら、**詳細情報** → **実行** を選んでください。
+
 ## 開発
 
 Node.js のバージョンは `mise.toml` で固定しています（グローバルへのインストールは不要です）。
@@ -31,6 +37,18 @@ npm run tauri build   # インストーラーを src-tauri/target/release/bundle
 - `hotfix/…`：リリース済みの版の緊急修正。`main` から作り、`main` と `develop` の両方に取り込む
 
 コミットメッセージは短い英語で、先頭に種類を付けます（`feat: …`、`fix: …`、`chore: …`、`docs: …`）。
+
+### CI とリリース（GitHub Actions）
+
+- `.github/workflows/ci.yml`：`develop` / `main` への PR（と `develop` への push）で、lint・テスト・画面のビルド・`cargo test` を実行する
+- `.github/workflows/release.yml`：`main` 上のコミットに `vX.Y.Z` のタグを push すると、インストーラーを作って Release の**下書き**に添付する
+
+リリースの手順：
+
+1. `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` のバージョンを上げる（`develop` で PR を通す）
+2. `develop` を `main` に merge commit で取り込み、`main` を push する
+3. `main` で `git tag vX.Y.Z` → `git push origin vX.Y.Z`（タグとバージョンが違うとワークフローが止まる）
+4. ワークフローが終わったら、Releases の画面で下書きを確認して公開する
 
 ## 機能
 
