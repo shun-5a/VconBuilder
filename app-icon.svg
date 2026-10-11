@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Source of the app / .vcb icon: "v" and "c" sharing one stem. Regenerate with `npx tauri icon app-icon.svg`. -->
+  <rect width="1024" height="1024" rx="224" fill="#282a36"/>
+  <g fill="#ff79c6" transform="translate(-20 0)">
+    <path d="M196 272 H306 L466 600 V272 H566 V652 H828 V752 H446 Z"/>
+    <path d="M626 272 H828 V372 H626 Z"/>
+  </g>
+</svg>

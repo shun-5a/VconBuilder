@@ -1,0 +1,38 @@
+{
+  "name": "vcon-builder",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "lint": "biome check . && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
+    "format": "biome check --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "~2.11.0",
+    "@tauri-apps/plugin-dialog": "~2.7.0",
+    "immer": "^11.1.21",
+    "mediabunny": "^1.61.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-resizable-panels": "^4.14.3",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@tauri-apps/cli": "^2.12.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
