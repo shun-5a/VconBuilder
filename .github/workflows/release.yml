@@ -31,7 +31,9 @@ jobs:
           node-version: 24 # same as mise.toml
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89" # same as the local toolchain (rust-version in Cargo.toml); newer clippy adds lints
 
       - uses: Swatinem/rust-cache@v2
         with:
