@@ -5,7 +5,6 @@
 import {
   ALL_FORMATS,
   AudioBufferSource,
-  BlobSource,
   CanvasSink,
   CanvasSource,
   canEncodeAudio,
@@ -15,6 +14,7 @@ import {
   Output,
   StreamTarget,
   type StreamTargetChunk,
+  UrlSource,
   type WrappedCanvas,
 } from "mediabunny";
 import { audibleTracks, preloadProjectAudio, scheduleAudio } from "../audio/audio";
@@ -28,6 +28,8 @@ export type ExportProgress = { phase: "Preparing" | "Audio" | "Video" | "Finaliz
 export type CancelToken = { cancelled: boolean };
 
 const SAMPLE_RATE = 48_000;
+/** Audio is mixed in pieces of this length, so long shows do not need the whole mix in memory at once. */
+const AUDIO_CHUNK_SECONDS = 30;
 const EPS = 1e-6;
 
 /** Output frame index → project frame. */
@@ -40,33 +42,81 @@ function shownScreens(p: Project, preset: ResolvedPreset): Track[] {
   return preset.layout === "single" ? screens.slice(0, 1) : screens;
 }
 
-/** Sequential video-frame reader for one clip, fed with the source timestamps of the frames it is shown on. */
+/**
+ * One demuxer per video file, shared by every clip that uses it. Files are read in byte ranges on demand
+ * (the asset protocol serves range requests) instead of being loaded whole into memory.
+ */
+class VideoInputs {
+  private inputs = new Map<string, Input>();
+
+  get(url: string): Input {
+    let input = this.inputs.get(url);
+    if (!input) {
+      const source = new UrlSource(url, {
+        maxCacheSize: 16 * 1024 * 1024,
+        getRetryDelay: (attempts) => (attempts < 3 ? 0.5 : null), // a missing file must not hang the export
+      });
+      input = new Input({ source, formats: ALL_FORMATS });
+      this.inputs.set(url, input);
+    }
+    return input;
+  }
+
+  dispose() {
+    for (const input of this.inputs.values()) input.dispose();
+    this.inputs.clear();
+  }
+}
+
+/**
+ * Sequential video-frame reader for one clip, fed with the source timestamps of the frames it is shown on.
+ * Its decoder is released as soon as the clip's last frame has been read.
+ */
 class ClipVideoReader {
   private gen: AsyncGenerator<WrappedCanvas | null, void, unknown> | null = null;
-  private input: Input | null = null;
+  private served = 0;
+  private done = false;
   current: Visual | null = null;
 
   constructor(
+    private inputs: VideoInputs,
     private url: string,
     private timestamps: number[],
   ) {}
 
   async next(): Promise<Visual | null> {
-    if (!this.gen) {
-      const blob = await (await fetch(this.url)).blob();
-      this.input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
-      const track = await this.input.getPrimaryVideoTrack();
-      if (!track) return null;
-      this.gen = new CanvasSink(track).canvasesAtTimestamps(this.timestamps);
+    if (this.done) return this.current;
+    try {
+      if (!this.gen) {
+        const track = await this.inputs.get(this.url).getPrimaryVideoTrack();
+        if (!track) {
+          this.done = true;
+          return null;
+        }
+        this.gen = new CanvasSink(track).canvasesAtTimestamps(this.timestamps);
+      }
+      const r = await this.gen.next();
+      if (!r.done && r.value) this.current = r.value.canvas as Visual;
+    } catch (e) {
+      // An unreadable file leaves the screen empty for this clip instead of failing the whole export.
+      console.warn("video read failed", this.url, e);
+      await this.close();
+      return null;
     }
-    const r = await this.gen.next();
-    if (!r.done && r.value) this.current = r.value.canvas as Visual;
+    if (++this.served >= this.timestamps.length) {
+      const last = this.current;
+      await this.close();
+      return last;
+    }
     return this.current;
   }
 
   async close() {
-    await this.gen?.return(undefined);
-    this.input?.dispose();
+    this.done = true;
+    const gen = this.gen;
+    this.gen = null;
+    this.current = null;
+    await gen?.return(undefined).catch(() => {});
   }
 }
 
@@ -100,6 +150,7 @@ export async function exportMp4(
   onProgress({ phase: "Preparing", done: 0, total: 1 });
   const screens = shownScreens(project, preset);
   const images = new Map<string, ImageBitmap>();
+  const videoInputs = new VideoInputs();
   const readers = new Map<string, ClipVideoReader>();
   for (const t of screens) {
     for (const c of t.clips) {
@@ -108,7 +159,7 @@ export async function exportMp4(
         if (kind === "image" && !images.has(ref)) {
           images.set(ref, await loadImageBitmap(urlOf(ref)).catch(() => null as unknown as ImageBitmap));
         } else if (kind === "video") {
-          readers.set(`${t.id}/${c.id}/${ref}`, new ClipVideoReader(urlOf(ref), clipTimestamps(c, fps, outFps, totalFrames)));
+          readers.set(`${t.id}/${c.id}/${ref}`, new ClipVideoReader(videoInputs, urlOf(ref), clipTimestamps(c, fps, outFps, totalFrames)));
         }
       }
     }
@@ -158,13 +209,20 @@ export async function exportMp4(
     await output.start();
 
     if (audioSource) {
-      onProgress({ phase: "Audio", done: 0, total: 1 });
+      const totalSamples = Math.ceil(durationSec * SAMPLE_RATE);
+      onProgress({ phase: "Audio", done: 0, total: totalSamples });
       await preloadProjectAudio(project, urlOf);
-      const octx = new OfflineAudioContext(2, Math.ceil(durationSec * SAMPLE_RATE), SAMPLE_RATE);
-      scheduleAudio(octx, octx.destination, project, urlOf, 0, 0, endFrame);
-      const mixed = await octx.startRendering();
-      if (cancel.cancelled) return await abort();
-      await audioSource.add(mixed);
+      for (let s0 = 0; s0 < totalSamples; s0 += AUDIO_CHUNK_SECONDS * SAMPLE_RATE) {
+        if (cancel.cancelled) return await abort();
+        const s1 = Math.min(totalSamples, s0 + AUDIO_CHUNK_SECONDS * SAMPLE_RATE);
+        const octx = new OfflineAudioContext(2, s1 - s0, SAMPLE_RATE);
+        // Project frames may be fractional here; clips crossing the boundary continue in the next piece.
+        const from = (s0 / SAMPLE_RATE) * fps;
+        const to = Math.min(endFrame, (s1 / SAMPLE_RATE) * fps);
+        scheduleAudio(octx, octx.destination, project, urlOf, from, 0, to);
+        await audioSource.add(await octx.startRendering());
+        onProgress({ phase: "Audio", done: s1, total: totalSamples });
+      }
       audioSource.close();
     }
 
@@ -197,9 +255,13 @@ export async function exportMp4(
     await Promise.all(pending);
   } catch (e) {
     if (output.state !== "canceled" && output.state !== "finalized") await output.cancel().catch(() => {});
+    // Do not leave a broken, half-written mp4 behind.
+    await Promise.allSettled(pending);
+    await removeFile(outPath).catch(() => {});
     throw e;
   } finally {
     for (const r of readers.values()) await r.close().catch(() => {});
+    videoInputs.dispose();
     for (const b of images.values()) b?.close();
   }
 }

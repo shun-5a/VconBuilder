@@ -24,6 +24,14 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Runs file work on the blocking thread pool. Commands without `async` run on the main thread,
+/// so large copies / writes would freeze every window while they run.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(err)?
+}
+
 fn is_project_file(path: &Path) -> bool {
     path.extension()
         .is_some_and(|e| e.eq_ignore_ascii_case(PROJECT_EXT))
@@ -148,8 +156,8 @@ fn unique_asset_path(dir: &Path, name: &str) -> PathBuf {
 }
 
 #[tauri::command]
-fn read_text(path: String) -> Result<String, String> {
-    fs::read_to_string(path).map_err(err)
+async fn read_text(path: String) -> Result<String, String> {
+    blocking(move || fs::read_to_string(path).map_err(err)).await
 }
 
 #[tauri::command]
@@ -159,16 +167,19 @@ fn file_exists(path: String) -> bool {
 
 /// Writes text atomically (temp file + rename) so watchers and external editors never see a half-written file.
 #[tauri::command]
-fn write_text_atomic(path: String, text: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    let tmp = path.with_file_name(format!(
-        ".{}.tmp",
-        path.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default()
-    ));
-    fs::write(&tmp, text.as_bytes()).map_err(err)?;
-    fs::rename(&tmp, &path).map_err(err)
+async fn write_text_atomic(path: String, text: String) -> Result<(), String> {
+    blocking(move || {
+        let path = PathBuf::from(path);
+        let tmp = path.with_file_name(format!(
+            ".{}.tmp",
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ));
+        fs::write(&tmp, text.as_bytes()).map_err(err)?;
+        fs::rename(&tmp, &path).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -271,8 +282,11 @@ fn open_in_window(app: &tauri::AppHandle, dir: PathBuf) {
 }
 
 #[tauri::command]
-fn list_assets(dir: String) -> Result<Vec<String>, String> {
-    let dir = PathBuf::from(dir);
+async fn list_assets(dir: String) -> Result<Vec<String>, String> {
+    blocking(move || list_assets_in(&PathBuf::from(dir))).await
+}
+
+fn list_assets_in(dir: &Path) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut stack = vec![dir.join(ASSETS_DIR)];
     while let Some(d) = stack.pop() {
@@ -287,7 +301,7 @@ fn list_assets(dir: String) -> Result<Vec<String>, String> {
             }
             if p.is_dir() {
                 stack.push(p);
-            } else if let Some(rel) = to_rel(&dir, &p) {
+            } else if let Some(rel) = to_rel(dir, &p) {
                 out.push(rel);
             }
         }
@@ -362,18 +376,21 @@ fn body_bytes(request: &tauri::ipc::Request) -> Result<Vec<u8>, String> {
 /// Writes a binary chunk at a byte offset. Headers: `x-path` (absolute, URI-encoded), `x-position`.
 /// Used for streamed asset imports and for mp4 export.
 #[tauri::command]
-fn write_chunk(request: tauri::ipc::Request) -> Result<(), String> {
+async fn write_chunk(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let path = header(&request, "x-path")?;
     let position: u64 = header(&request, "x-position")?.parse().map_err(err)?;
     let bytes = body_bytes(&request)?;
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(err)?;
-    file.seek(SeekFrom::Start(position)).map_err(err)?;
-    file.write_all(&bytes).map_err(err)
+    blocking(move || {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(err)?;
+        file.seek(SeekFrom::Start(position)).map_err(err)?;
+        file.write_all(&bytes).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -552,10 +569,10 @@ fn is_untitled_dir(app: tauri::AppHandle, dir: String) -> Result<bool, String> {
 
 /// Deletes an untitled project folder. Refuses anything outside the untitled root.
 #[tauri::command]
-fn discard_untitled(
+async fn discard_untitled(
     app: tauri::AppHandle,
     window: tauri::Window,
-    state: tauri::State<WatchState>,
+    state: tauri::State<'_, WatchState>,
     dir: String,
 ) -> Result<(), String> {
     let root = untitled_root(&app)?;
@@ -564,7 +581,7 @@ fn discard_untitled(
         return Err("not an untitled project folder".into());
     }
     state.0.lock().unwrap().remove(window.label());
-    fs::remove_dir_all(&dir).map_err(err)
+    blocking(move || fs::remove_dir_all(&dir).map_err(err)).await
 }
 
 /// Stops watching this window's project folder (before it is moved or deleted).
@@ -595,9 +612,11 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 /// "Save As": copies a whole project folder to `to`, which must not exist yet or be empty.
 /// The project file is renamed after the new folder (`<to name>.vcb`).
 #[tauri::command]
-fn copy_project(from: String, to: String) -> Result<(), String> {
-    let from = PathBuf::from(from);
-    let to = PathBuf::from(to);
+async fn copy_project(from: String, to: String) -> Result<(), String> {
+    blocking(move || copy_project_blocking(PathBuf::from(from), PathBuf::from(to))).await
+}
+
+fn copy_project_blocking(from: PathBuf, to: PathBuf) -> Result<(), String> {
     if to.exists() && fs::read_dir(&to).map_err(err)?.next().is_some() {
         return Err(format!("{} already exists and is not empty", to.display()));
     }
