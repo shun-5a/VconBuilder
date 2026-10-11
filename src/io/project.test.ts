@@ -22,6 +22,8 @@ vi.mock("./backend", () => ({
   onProjectFileChanged: async () => () => {},
   onAssetsChanged: async () => () => {},
   joinPath: (dir: string, rel: string) => `${dir}/${rel}`,
+  assetUrl: (dir: string, rel: string) => `asset://${dir}/${rel}`,
+  bumpAssetVersion: () => {},
 }));
 
 const { openOrCreateProject, saveNow } = await import("./project");

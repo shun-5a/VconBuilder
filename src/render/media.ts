@@ -40,6 +40,23 @@ const notify = () => {
   for (const cb of listeners) cb();
 };
 
+/** Drops everything cached for a media URL (the file changed on disk) and redraws. */
+export function forgetMedia(url: string) {
+  const img = images.get(url);
+  if (img) img.onload = null;
+  images.delete(url);
+  const v = videos.get(url);
+  if (v) {
+    v.onseeked = v.onloadeddata = null;
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
+  }
+  videos.delete(url);
+  durations.delete(url);
+  notify();
+}
+
 // ------------------------------------------------------------ images
 
 const images = new Map<string, HTMLImageElement>();
@@ -115,7 +132,10 @@ export function mediaDuration(url: string, kind: MediaKind): Promise<number> {
       const el = document.createElement(kind === "audio" ? "audio" : "video");
       el.preload = "metadata";
       el.onloadedmetadata = () => resolve(Number.isFinite(el.duration) ? el.duration : 0);
-      el.onerror = () => resolve(0);
+      el.onerror = () => {
+        durations.delete(url); // not cached: the file may still be being written
+        resolve(0);
+      };
       el.src = url;
     });
     durations.set(url, p);

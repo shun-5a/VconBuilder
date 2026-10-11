@@ -1,8 +1,12 @@
+import { forgetAudio } from "../audio/audio";
 import { AGENTS_FILE, CLAUDE_FILE, isGeneratedClaudeMd, mergeAgentsMd } from "../model/agentsDoc";
 import { parseProject, serializeProject } from "../model/serialize";
 import { emptyProject } from "../model/template";
+import { forgetMedia } from "../render/media";
 import { useStore } from "../store/store";
 import {
+  assetUrl,
+  bumpAssetVersion,
   copyProject,
   createUntitledDir,
   discardUntitled,
@@ -87,7 +91,13 @@ export async function openOrCreateProject(dir: string): Promise<void> {
   useStore.getState().setProject(dir, parsed.project, untitled);
   await openProjectDir(dir);
   await refreshAssets();
-  unlisten = [await onProjectFileChanged(debounce(reloadFromDisk, 150)), await onAssetsChanged(debounce(refreshAssets, 200))];
+  unlisten = [
+    await onProjectFileChanged(debounce(reloadFromDisk, 150)),
+    await onAssetsChanged((changed) => {
+      for (const rel of changed) changedAssets.add(rel);
+      applyAssetChanges();
+    }),
+  ];
   if (!untitled) pushRecent(dir);
 }
 
@@ -95,6 +105,26 @@ export function stopWatching() {
   for (const u of unlisten) u();
   unlisten = [];
 }
+
+/** Asset files changed on disk since the last refresh (collected while events keep coming). */
+const changedAssets = new Set<string>();
+
+const applyAssetChanges = debounce(() => {
+  const dir = useStore.getState().dir;
+  const changed = [...changedAssets];
+  changedAssets.clear();
+  if (dir && changed.length) {
+    // An overwritten image / video / sound must not keep showing (or playing) the old content.
+    for (const rel of changed) {
+      const old = assetUrl(dir, rel);
+      forgetMedia(old);
+      forgetAudio(old);
+      bumpAssetVersion(dir, rel);
+    }
+    useStore.setState((s) => ({ assetEpoch: s.assetEpoch + 1 }));
+  }
+  void refreshAssets();
+}, 200);
 
 export async function refreshAssets() {
   const dir = useStore.getState().dir;

@@ -329,6 +329,7 @@ function TcInput({
 function MediaInput({ track, value, onCommit }: { track: Track; value: string; onCommit: (v: string | null) => void }) {
   const dir = useStore((s) => s.dir)!;
   const assets = useStore((s) => s.assets);
+  useStore((s) => s.assetEpoch); // re-render with the new URL when the file is replaced on disk
   const [picking, setPicking] = useState(false);
   const kind = mediaKind(value);
   const url = value ? assetUrl(dir, value) : "";

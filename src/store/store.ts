@@ -42,6 +42,8 @@ type State = {
   /** Why the latest changes are not on disk yet (write failed / invalid values); null when saved. */
   saveError: string | null;
   notice: string | null;
+  /** Bumped when asset files change on disk, so views rebuild their asset URLs. */
+  assetEpoch: number;
 };
 
 type Actions = {
@@ -88,6 +90,7 @@ export const useStore = create<State & Actions>()((set, get) => ({
   loadError: null,
   saveError: null,
   notice: null,
+  assetEpoch: 0,
 
   setProject(dir, project, untitled = false) {
     set({
