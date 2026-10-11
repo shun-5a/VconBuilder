@@ -16,6 +16,48 @@ const EXPORTS_DIR: &str = "exports";
 #[derive(Default)]
 struct WatchState(Mutex<HashMap<String, (PathBuf, RecommendedWatcher)>>);
 
+/// Project folders each window has declared (by window label). File commands only touch paths inside
+/// these, or inside the untitled-projects folder, so a bad path from the page cannot reach other files.
+#[derive(Default)]
+struct ProjectRoots(Mutex<HashMap<String, Vec<PathBuf>>>);
+
+fn add_root(app: &tauri::AppHandle, window: &tauri::Window, dir: &Path) {
+    let state = app.state::<ProjectRoots>();
+    let mut roots = state.0.lock().unwrap();
+    let list = roots.entry(window.label().to_string()).or_default();
+    if !list.iter().any(|d| d == dir) {
+        list.push(dir.to_path_buf());
+    }
+}
+
+/// Rejects paths outside this window's project folders and the untitled-projects folder.
+fn checked_path(
+    app: &tauri::AppHandle,
+    window: &tauri::Window,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!("invalid path: {path}"));
+    }
+    let untitled = untitled_root(app)?;
+    let roots = app.state::<ProjectRoots>();
+    let allowed = is_inside(&p, &untitled)
+        || roots
+            .0
+            .lock()
+            .unwrap()
+            .get(window.label())
+            .is_some_and(|list| list.iter().any(|d| is_inside(&p, d)));
+    if allowed {
+        Ok(p)
+    } else {
+        Err(format!("{path} is outside the open project"))
+    }
+}
+
 /// Folder a window should open when it starts (from a double-clicked .vcb), by window label.
 #[derive(Default)]
 struct PendingOpen(Mutex<HashMap<String, String>>);
@@ -187,7 +229,12 @@ fn unique_asset_path(dir: &Path, name: &str) -> PathBuf {
 }
 
 #[tauri::command]
-async fn read_text(path: String) -> Result<String, String> {
+async fn read_text(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<String, String> {
+    let path = checked_path(&app, &window, &path)?;
     blocking(move || fs::read_to_string(path).map_err(err)).await
 }
 
@@ -198,9 +245,14 @@ fn file_exists(path: String) -> bool {
 
 /// Writes text atomically (temp file + rename) so watchers and external editors never see a half-written file.
 #[tauri::command]
-async fn write_text_atomic(path: String, text: String) -> Result<(), String> {
+async fn write_text_atomic(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    path: String,
+    text: String,
+) -> Result<(), String> {
+    let path = checked_path(&app, &window, &path)?;
     blocking(move || {
-        let path = PathBuf::from(path);
         let tmp = path.with_file_name(format!(
             ".{}.tmp",
             path.file_name()
@@ -214,8 +266,14 @@ async fn write_text_atomic(path: String, text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn ensure_project_dirs(dir: String) -> Result<(), String> {
+fn ensure_project_dirs(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    dir: String,
+) -> Result<(), String> {
     let dir = PathBuf::from(dir);
+    // Opening a project (picked in a dialog, from the recent list or a double-clicked .vcb) starts here.
+    add_root(&app, &window, &dir);
     fs::create_dir_all(dir.join(ASSETS_DIR)).map_err(err)?;
     fs::create_dir_all(dir.join(EXPORTS_DIR)).map_err(err)
 }
@@ -233,6 +291,7 @@ fn open_project(
     app.asset_protocol_scope()
         .allow_directory(&dir, true)
         .map_err(err)?;
+    add_root(&app, &window, &dir);
 
     let emitter = app.clone();
     let label = window.label().to_string();
@@ -407,8 +466,12 @@ fn body_bytes(request: &tauri::ipc::Request) -> Result<Vec<u8>, String> {
 /// Writes a binary chunk at a byte offset. Headers: `x-path` (absolute, URI-encoded), `x-position`.
 /// Used for streamed asset imports and for mp4 export.
 #[tauri::command]
-async fn write_chunk(request: tauri::ipc::Request<'_>) -> Result<(), String> {
-    let path = header(&request, "x-path")?;
+async fn write_chunk(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let path = checked_path(&app, &window, &header(&request, "x-path")?)?;
     let position: u64 = header(&request, "x-position")?.parse().map_err(err)?;
     let bytes = body_bytes(&request)?;
     blocking(move || {
@@ -425,7 +488,12 @@ async fn write_chunk(request: tauri::ipc::Request<'_>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn create_empty_file(path: String) -> Result<(), String> {
+fn create_empty_file(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<(), String> {
+    let path = checked_path(&app, &window, &path)?;
     if let Some(parent) = Path::new(&path).parent() {
         fs::create_dir_all(parent).map_err(err)?;
     }
@@ -433,7 +501,8 @@ fn create_empty_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn remove_file(path: String) -> Result<(), String> {
+fn remove_file(app: tauri::AppHandle, window: tauri::Window, path: String) -> Result<(), String> {
+    let path = checked_path(&app, &window, &path)?;
     fs::remove_file(path).map_err(err)
 }
 
@@ -617,7 +686,11 @@ async fn discard_untitled(
 ) -> Result<(), String> {
     let root = untitled_root(&app)?;
     let dir = PathBuf::from(dir);
-    if !dir.starts_with(&root) || dir == root {
+    // Compare resolved paths: "untitled/../x" would otherwise pass a plain prefix check.
+    let has_parent = dir
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir));
+    if has_parent || !is_inside(&dir, &root) || is_inside(&root, &dir) {
         return Err("not an untitled project folder".into());
     }
     state.0.lock().unwrap().remove(window.label());
@@ -699,6 +772,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(WatchState::default())
         .manage(PendingOpen::default())
+        .manage(ProjectRoots::default())
         .setup(|app| {
             // First launch by double-clicking a .vcb: the main window opens that project.
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -723,6 +797,11 @@ pub fn run() {
                     .unwrap()
                     .remove(window.label());
                 app.state::<PendingOpen>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .remove(window.label());
+                app.state::<ProjectRoots>()
                     .0
                     .lock()
                     .unwrap()
