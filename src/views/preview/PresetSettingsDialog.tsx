@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { InsetPosition } from "../../model/schema";
 import { resolvePreset } from "../../render/compositor";
 import { currentPreset, useStore } from "../../store/store";
+import { NumberField } from "../NumberField";
 import { FPS_PRESETS, ResolutionInput } from "../SettingsDialog";
 import { renamePreset, updatePreview } from "./presets";
 
@@ -100,15 +101,15 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
 
             <label>Video bitrate</label>
             <div className="row">
-              <input
-                type="number"
-                min={0.5}
+              <NumberField
+                min={0.1}
+                max={500}
                 step={0.5}
-                style={{ width: 80 }}
+                width={80}
                 value={preset.video.bitrate / 1_000_000}
-                onChange={(e) =>
+                onCommit={(v) =>
                   updatePreview((p) => {
-                    p.video.bitrate = Math.max(100_000, Math.round(Number(e.target.value) * 1_000_000));
+                    p.video.bitrate = Math.round(v * 1_000_000);
                   })
                 }
               />
@@ -140,15 +141,15 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
                 />
                 Mix audio tracks into the file (AAC)
               </label>
-              <input
-                type="number"
-                min={64}
+              <NumberField
+                min={32}
+                max={512}
+                integer
                 step={32}
-                style={{ width: 70 }}
                 value={preset.audio.bitrate / 1000}
-                onChange={(e) =>
+                onCommit={(v) =>
                   updatePreview((p) => {
-                    p.audio.bitrate = Math.max(32_000, Math.round(Number(e.target.value)) * 1000);
+                    p.audio.bitrate = v * 1000;
                   })
                 }
               />
@@ -169,17 +170,16 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
                 <option value="center">Center</option>
                 <option value="top">Top</option>
               </select>
-              <input
-                type="number"
-                min={1}
+              <NumberField
+                min={0.5}
                 max={20}
                 step={0.5}
-                style={{ width: 60 }}
+                width={60}
                 value={preset.captionStyle.size}
                 title="Font size (% of screen height)"
-                onChange={(e) =>
+                onCommit={(v) =>
                   updatePreview((p) => {
-                    p.captionStyle.size = Math.max(0.5, Number(e.target.value));
+                    p.captionStyle.size = v;
                   })
                 }
               />
@@ -202,17 +202,16 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
                 <option value="top-right">Top right</option>
                 <option value="top-left">Top left</option>
               </select>
-              <input
-                type="number"
+              <NumberField
                 min={5}
                 max={50}
                 step={1}
-                style={{ width: 60 }}
+                width={60}
                 value={preset.insetStyle.size}
                 title="Inset width (% of screen width)"
-                onChange={(e) =>
+                onCommit={(v) =>
                   updatePreview((p) => {
-                    p.insetStyle.size = Math.min(100, Math.max(1, Number(e.target.value)));
+                    p.insetStyle.size = v;
                   })
                 }
               />

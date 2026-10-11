@@ -39,6 +39,8 @@ type State = {
   warnings: string[];
   /** Error from the last external edit that could not be loaded (the previous state is kept). */
   loadError: string | null;
+  /** Why the latest changes are not on disk yet (write failed / invalid values); null when saved. */
+  saveError: string | null;
   notice: string | null;
 };
 
@@ -84,6 +86,7 @@ export const useStore = create<State & Actions>()((set, get) => ({
   pxPerFrame: 4,
   warnings: [],
   loadError: null,
+  saveError: null,
   notice: null,
 
   setProject(dir, project, untitled = false) {
@@ -103,6 +106,7 @@ export const useStore = create<State & Actions>()((set, get) => ({
       collapsedGroups: [],
       warnings: validateProject(project),
       loadError: null,
+      saveError: null,
     });
   },
 

@@ -10,6 +10,7 @@ import { clipThumbRef } from "../../render/compositor";
 import { mediaKind } from "../../render/media";
 import { currentPreset, useStore } from "../../store/store";
 import { addAssetClip, DEFAULT_STILL_SECONDS } from "../actions";
+import { NumberField } from "../NumberField";
 import { seek } from "../preview/player";
 import { toggleTrackOnScreen } from "../preview/presets";
 import { Waveform } from "./Waveform";
@@ -350,15 +351,16 @@ function TrackHeader({ track, index, count }: { track: Track; index: number; cou
             >
               {track.mute ? "◌" : "◉"}
             </button>
-            <input
+            <NumberField
               className="vol"
-              type="number"
+              min={-60}
+              max={12}
               step={1}
               value={track.volume ?? 0}
-              title="Track volume (dB)"
-              onChange={(e) =>
+              title="Track volume (dB, -60 to +12)"
+              onCommit={(v) =>
                 patch((t) => {
-                  t.volume = Number(e.target.value) || undefined;
+                  t.volume = v || undefined;
                 })
               }
             />
