@@ -37,9 +37,15 @@ const CHUNK = 8 * 1024 * 1024;
 export async function importFile(dir: string, file: File): Promise<string> {
   const rel = await reserveAsset(dir, file.name || "asset");
   const abs = joinPath(dir, rel);
-  for (let pos = 0; pos < file.size; pos += CHUNK) {
-    const buf = new Uint8Array(await file.slice(pos, pos + CHUNK).arrayBuffer());
-    await writeChunk(abs, pos, buf);
+  try {
+    for (let pos = 0; pos < file.size; pos += CHUNK) {
+      const buf = new Uint8Array(await file.slice(pos, pos + CHUNK).arrayBuffer());
+      await writeChunk(abs, pos, buf);
+    }
+  } catch (e) {
+    // Do not leave an empty or truncated file in assets/.
+    await removeFile(abs).catch(() => {});
+    throw e;
   }
   return rel;
 }

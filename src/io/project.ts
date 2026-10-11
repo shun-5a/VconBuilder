@@ -47,6 +47,15 @@ export function getRecentProjects(): string[] {
   }
 }
 
+/** Removes a folder from the recent projects (it was moved or deleted). */
+export function forgetRecent(dir: string) {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(getRecentProjects().filter((d) => d !== dir)));
+  } catch {
+    // storage unavailable – recents are a convenience only
+  }
+}
+
 function pushRecent(dir: string) {
   try {
     const list = [dir, ...getRecentProjects().filter((d) => d !== dir)].slice(0, 10);
@@ -104,6 +113,10 @@ export async function openOrCreateProject(dir: string): Promise<void> {
 export function stopWatching() {
   for (const u of unlisten) u();
   unlisten = [];
+  if (reloadPending) {
+    reloadPending = false;
+    document.removeEventListener("focusout", onFocusOut);
+  }
 }
 
 /** Asset files changed on disk since the last refresh (collected while events keep coming). */
@@ -132,8 +145,35 @@ export async function refreshAssets() {
   useStore.setState({ assets: await listAssets(dir) });
 }
 
+/** A table cell or other field is being edited (its commit uses row ids that a reload would shift). */
+function isEditing(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  return !!el && (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+}
+
+let reloadPending = false;
+/** Applies a held-back external change once editing has finished (after the field's own commit). */
+function onFocusOut() {
+  setTimeout(() => {
+    if (!reloadPending || isEditing()) return;
+    reloadPending = false;
+    document.removeEventListener("focusout", onFocusOut);
+    void reloadFromDisk();
+  }, 0);
+}
+
 async function reloadFromDisk() {
   if (!useStore.getState().dir) return;
+  if (isEditing()) {
+    // Row ids are positional: reloading now could make the field commit into another row.
+    if (!reloadPending) {
+      reloadPending = true;
+      document.addEventListener("focusout", onFocusOut);
+      useStore.setState({ notice: "External changes pending: applied when you finish editing" });
+    }
+    return;
+  }
   let text: string;
   try {
     text = await readText(filePath);

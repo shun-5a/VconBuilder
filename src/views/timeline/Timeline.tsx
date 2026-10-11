@@ -83,10 +83,14 @@ export function Timeline() {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("blur", up);
       setPanning(false);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    window.addEventListener("blur", up);
   };
 
   // Keep the playhead in view while playing.
@@ -186,9 +190,11 @@ function Ruler({ fps, ppf, width, playhead }: { fps: number; ppf: number; width:
     const up = () => {
       lane.removeEventListener("pointermove", move);
       lane.removeEventListener("pointerup", up);
+      lane.removeEventListener("lostpointercapture", up);
     };
     lane.addEventListener("pointermove", move);
     lane.addEventListener("pointerup", up);
+    lane.addEventListener("lostpointercapture", up);
   };
 
   return (
@@ -461,14 +467,20 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
         useStore.getState().editFromBase((d) => trimClip(d, cref, mode, nf, ripple));
       }
     };
+    // A drag can also end without pointerup (pointercancel, the window losing focus); the edit must
+    // still be committed, or the open transaction would swallow every later undo step.
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("blur", up);
       onSnap(null);
       useStore.getState().commit();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    window.addEventListener("blur", up);
   };
 
   return (

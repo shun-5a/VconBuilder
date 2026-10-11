@@ -11,10 +11,14 @@ const Id = z
 
 export const FieldType = z.enum(["text", "media"]);
 
+/** Clip properties the app uses itself; a column with one of these keys would overwrite them. */
+export const RESERVED_FIELD_KEYS = ["id", "start", "end", "offset"];
+
 export const Field = z.object({
   key: z
     .string()
     .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+    .refine((k) => !RESERVED_FIELD_KEYS.includes(k), { message: `must not be one of ${RESERVED_FIELD_KEYS.join(", ")}` })
     .describe("Property name used on each clip"),
   label: z.string().describe("Column title shown in the table"),
   type: FieldType.default("text").describe("text: free text / media: project-relative path to an asset"),
@@ -41,7 +45,11 @@ export const Track = z.object({
   id: Id,
   name: z.string(),
   kind: TrackKind.describe("visual: images and videos (picture, lighting references, ...) / audio: audio files only"),
-  fields: z.array(Field).default([]).describe("Table columns for this track"),
+  fields: z
+    .array(Field)
+    .default([])
+    .refine((fs) => new Set(fs.map((f) => f.key)).size === fs.length, { message: "field keys must be unique within a track" })
+    .describe("Table columns for this track"),
   clips: z.array(Clip).default([]).describe("Clips sorted by start; clips on one track never overlap"),
   mute: z.boolean().optional(),
   volume: z.number().optional().describe("Audio: track volume in dB"),

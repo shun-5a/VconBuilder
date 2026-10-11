@@ -109,6 +109,40 @@ describe("ops", () => {
     expect(ranges(p, "video")[1]).toBe("b:00:00:02:00-00:00:05:00");
   });
 
+  it("changeFps never creates empty or overlapping clips", () => {
+    const p = produce(sample(), (d) => {
+      d.settings.fps = 60;
+      d.tracks[0].clips = ["00:00:00:00", "00:00:00:01", "00:00:00:02", "00:00:00:03"].map((start, i) => ({
+        id: `c${i}`,
+        start,
+        end: `00:00:00:0${i + 1}`,
+      }));
+      changeFps(d, 24);
+    });
+    expect(validateProject(p)).toEqual([]);
+    expect(p.tracks[0].clips.map((c) => `${c.start}-${c.end}`)).toEqual([
+      "00:00:00:00-00:00:00:01",
+      "00:00:00:01-00:00:00:02",
+      "00:00:00:02-00:00:00:03",
+      "00:00:00:03-00:00:00:04",
+    ]);
+  });
+
+  it("rejects reserved or duplicate column keys", async () => {
+    const { parseProject } = await import("./serialize");
+    const track = (fields: object[]) => JSON.stringify({ tracks: [{ id: "v", name: "V", kind: "visual", fields }] });
+    expect(parseProject(track([{ key: "id", label: "ID" }])).ok).toBe(false);
+    expect(
+      parseProject(
+        track([
+          { key: "a", label: "A" },
+          { key: "a", label: "B" },
+        ]),
+      ).ok,
+    ).toBe(false);
+    expect(parseProject(track([{ key: "a", label: "A" }])).ok).toBe(true);
+  });
+
   it("validateProject reports overlaps", () => {
     const p = sample();
     p.tracks[0].clips[1].start = "00:00:01:00";

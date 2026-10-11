@@ -35,7 +35,7 @@ app is written back to the file within a fraction of a second. There is no separ
 | \`<folder name>.vcb\` | the project file (JSON): tracks with their rows (clips), and presets |
 | \`assets/\` | images, videos and audio used by clips; you may copy files in here |
 | \`exports/\` | rendered mp4 and text exports (Markdown / CSV); do not edit |
-| \`AGENTS.md\` / \`CLAUDE.md\` | this guide |
+| \`AGENTS.md\` | this guide |
 
 ## Format of the project file (.vcb)
 
@@ -74,7 +74,7 @@ frames = ((HH×60 + MM)×60 + SS)×fps + FF. Example at 30 fps: \`"00:01:02:15"\
 
 | Key | Type | Notes |
 |---|---|---|
-| \`key\` | string \`[A-Za-z_][A-Za-z0-9_]*\` | property name used on clips; unique in the track |
+| \`key\` | string \`[A-Za-z_][A-Za-z0-9_]*\` | property name used on clips; unique in the track; not \`id\`, \`start\`, \`end\` or \`offset\` |
 | \`label\` | string | column title (any language) |
 | \`type\` | \`"text"\` \\| \`"media"\` | media values are project-relative paths such as \`"assets/shot01.png"\` |
 | \`width\` | number, optional | column width in px (UI only) |

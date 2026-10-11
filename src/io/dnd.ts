@@ -41,8 +41,16 @@ export async function importDrop(snap: DropSnapshot): Promise<string[]> {
   try {
     let paths: string[] = [];
     if (snap.files.length) {
-      paths = [];
-      for (const f of snap.files) paths.push(await importFile(dir, f));
+      // One failed file must not drop the ones that were imported.
+      const failed: string[] = [];
+      for (const f of snap.files) {
+        try {
+          paths.push(await importFile(dir, f));
+        } catch (e) {
+          failed.push(`${f.name}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+      if (failed.length) useStore.setState({ notice: `Import failed for ${failed.join(", ")}` });
     } else if (snap.url?.startsWith("data:")) {
       const blob = await (await fetch(snap.url)).blob();
       const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg").replace(/\+.*/, "") || "bin";

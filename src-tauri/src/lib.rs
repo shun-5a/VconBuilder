@@ -79,6 +79,37 @@ fn same_dir_key(path: &Path) -> String {
     }
 }
 
+/// Whether `path` (which may not exist yet) is `dir` or lies inside it, comparing resolved paths.
+fn is_inside(path: &Path, dir: &Path) -> bool {
+    let resolve = |p: &Path| {
+        // Resolve the nearest existing ancestor and re-append the rest.
+        let mut rest = Vec::new();
+        let mut cur = p.to_path_buf();
+        loop {
+            if let Ok(c) = fs::canonicalize(&cur) {
+                return rest.iter().rev().fold(c, |acc: PathBuf, n| acc.join(n));
+            }
+            match (cur.file_name().map(|n| n.to_os_string()), cur.parent()) {
+                (Some(n), Some(parent)) => {
+                    rest.push(n);
+                    cur = parent.to_path_buf();
+                }
+                _ => return p.to_path_buf(),
+            }
+        }
+    };
+    let key = |p: PathBuf| {
+        let s = dunce_path(&p).replace('\\', "/");
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s
+        }
+    };
+    let (p, d) = (key(resolve(path)), key(resolve(dir)));
+    p == d || p.starts_with(&format!("{}/", d.trim_end_matches('/')))
+}
+
 /// Project folder named by a launch argument: a .vcb file (its folder) or a folder.
 fn dir_from_arg(arg: &str, cwd: &Path) -> Option<PathBuf> {
     let p = cwd.join(arg);
@@ -451,8 +482,11 @@ async fn download_asset(dir: String, url: String) -> Result<String, String> {
         if parsed.scheme() != "http" && parsed.scheme() != "https" {
             return Err(format!("unsupported URL scheme: {}", parsed.scheme()));
         }
-        let response = reqwest::blocking::Client::builder()
+        // No overall timeout (large videos take a while); only connecting may not hang.
+        let mut response = reqwest::blocking::Client::builder()
             .user_agent("VconBuilder/0.1")
+            .timeout(None)
+            .connect_timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(err)?
             .get(parsed.clone())
@@ -468,8 +502,14 @@ async fn download_asset(dir: String, url: String) -> Result<String, String> {
         let dir = PathBuf::from(dir);
         fs::create_dir_all(dir.join(ASSETS_DIR)).map_err(err)?;
         let path = unique_asset_path(&dir, &file_name_from_url(&parsed, content_type.as_deref()));
-        let bytes = response.bytes().map_err(err)?;
-        fs::write(&path, &bytes).map_err(err)?;
+        // Streamed straight to disk instead of being held in memory.
+        let written = fs::File::create(&path)
+            .map_err(err)
+            .and_then(|mut file| std::io::copy(&mut response, &mut file).map_err(err));
+        if let Err(e) = written {
+            let _ = fs::remove_file(&path);
+            return Err(e);
+        }
         to_rel(&dir, &path).ok_or_else(|| "failed to resolve asset path".into())
     })
     .await
@@ -595,7 +635,9 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let name = entry.file_name();
-        if name.to_string_lossy().ends_with(".tmp") {
+        // Only our own temporary files (".<name>.tmp", see write_text_atomic) are skipped.
+        let n = name.to_string_lossy();
+        if n.starts_with('.') && n.ends_with(".tmp") {
             continue;
         }
         let src = entry.path();
@@ -620,8 +662,14 @@ fn copy_project_blocking(from: PathBuf, to: PathBuf) -> Result<(), String> {
     if to.exists() && fs::read_dir(&to).map_err(err)?.next().is_some() {
         return Err(format!("{} already exists and is not empty", to.display()));
     }
+    if is_inside(&to, &from) {
+        // It would be copied into itself again and again.
+        return Err("Choose a location outside the project folder".into());
+    }
+    // Decide the project file from the source (backups or other .vcb files may sit next to it).
+    let source_file = project_file_in(&from);
     copy_dir(&from, &to).map_err(err)?;
-    let copied = project_file_in(&to);
+    let copied = to.join(source_file.file_name().unwrap_or_default());
     let wanted = to.join(format!(
         "{}.{PROJECT_EXT}",
         to.file_name().unwrap_or_default().to_string_lossy()
@@ -707,4 +755,49 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_project(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vcb-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join(ASSETS_DIR)).unwrap();
+        dir
+    }
+
+    #[test]
+    fn refuses_to_copy_a_project_into_itself() {
+        let from = temp_project("self");
+        assert!(is_inside(&from.join("Copy of project"), &from));
+        assert!(is_inside(&from.join("assets").join("x"), &from));
+        assert!(!is_inside(&from.with_extension("copy"), &from));
+        assert!(copy_project_blocking(from.clone(), from.join("Copy of project")).is_err());
+        fs::remove_dir_all(&from).unwrap();
+    }
+
+    #[test]
+    fn copies_the_project_file_of_the_source_and_user_tmp_files() {
+        let from = temp_project("src");
+        let name = from.file_name().unwrap().to_string_lossy().to_string();
+        fs::write(from.join(format!("{name}.vcb")), "{}").unwrap();
+        fs::write(from.join("backup.vcb"), "{\"old\":1}").unwrap();
+        fs::write(from.join(ASSETS_DIR).join("take.tmp"), "user file").unwrap();
+        fs::write(from.join(format!(".{name}.vcb.tmp")), "ours").unwrap();
+        let to = from.with_file_name(format!("{name}-copy"));
+        let _ = fs::remove_dir_all(&to);
+        copy_project_blocking(from.clone(), to.clone()).unwrap();
+        let to_name = to.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            fs::read_to_string(to.join(format!("{to_name}.vcb"))).unwrap(),
+            "{}"
+        );
+        assert!(to.join("backup.vcb").is_file());
+        assert!(to.join(ASSETS_DIR).join("take.tmp").is_file());
+        assert!(!to.join(format!(".{name}.vcb.tmp")).exists());
+        fs::remove_dir_all(&from).unwrap();
+        fs::remove_dir_all(&to).unwrap();
+    }
 }
