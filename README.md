@@ -6,6 +6,12 @@ A local app that keeps timecodes and storyboards in a text file (`<folder name>.
 vcons (video contes) with reference images/videos and burned-in captions as mp4.
 Every track (video, lighting, audio, ...) has its own timing, so it also works as a stage-show cue sheet.
 
+## Download
+
+Get `VconBuilder_<version>_x64-setup.exe` from [Releases](https://github.com/shun-5a/VconBuilder/releases) and run it
+(installs for the current user; `.vcb` project files open in the app by double-click).
+The installer is not code-signed yet: if SmartScreen says "Windows protected your PC", choose **More info** → **Run anyway**.
+
 ## Development
 
 Node.js is pinned in `mise.toml` (no global installs needed).
@@ -31,6 +37,18 @@ npm run tauri build   # installer in src-tauri/target/release/bundle/nsis/
 - `hotfix/…`: urgent fixes branched from `main`, merged into both `main` and `develop`
 
 Commit messages are short English lines prefixed with the type (`feat: …`, `fix: …`, `chore: …`, `docs: …`).
+
+### CI and releases (GitHub Actions)
+
+- `.github/workflows/ci.yml`: every PR to `develop` / `main` (and pushes to `develop`) runs lint, tests, the front-end build and `cargo test`
+- `.github/workflows/release.yml`: pushing a tag `vX.Y.Z` that is on `main` builds the installer and attaches it to a **draft** release
+
+Release steps:
+
+1. Raise the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (on `develop`, through a PR)
+2. Merge `develop` into `main` (merge commit) and push `main`
+3. `git tag vX.Y.Z` on `main` and `git push origin vX.Y.Z` (the tag must match the version, or the workflow stops)
+4. When the workflow has finished, check the draft on the Releases page and publish it
 
 ## Features
 

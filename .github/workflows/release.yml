@@ -1,0 +1,59 @@
+# Pushing a tag vX.Y.Z (on main) builds the Windows installer and attaches it to a draft GitHub Release.
+# Check the draft, then publish it.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload the installer
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # to check that the tag is on main
+
+      - name: Check the tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($tag -ne "v$version") { throw "Tag $tag does not match the app version $version in src-tauri/tauri.conf.json" }
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Tag $tag is not on main" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # same as mise.toml
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: VconBuilder ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            ## Download
+            Download `VconBuilder_*_x64-setup.exe` below and run it. It installs for the current user (no administrator rights needed) and registers `.vcb` project files.
+
+            The installer is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC". Click **More info** → **Run anyway**.
+
+            ## ダウンロード
+            下の `VconBuilder_*_x64-setup.exe` をダウンロードして実行してください。今のユーザーにインストールされ（管理者権限は不要）、`.vcb` ファイルが登録されます。
+
+            インストーラーはまだコード署名していないため、「Windows によって PC が保護されました」と表示されることがあります。**詳細情報** → **実行** で進めてください。
