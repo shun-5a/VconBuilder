@@ -113,6 +113,7 @@ function Banners() {
   const loadError = useStore((s) => s.loadError);
   const warnings = useStore((s) => s.warnings);
   const notice = useStore((s) => s.notice);
+  const saveError = useStore((s) => s.saveError);
   const set = useStore((s) => s.set);
 
   useEffect(() => {
@@ -132,6 +133,11 @@ function Banners() {
           <button className="icon ghost" onClick={() => set({ loadError: null })}>
             ✕
           </button>
+        </div>
+      )}
+      {saveError && (
+        <div className="banner error">
+          <span className="msg">{saveError}</span>
         </div>
       )}
       {warnings.length > 0 && (

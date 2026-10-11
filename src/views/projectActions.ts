@@ -1,8 +1,8 @@
 /** New / Open / Save to folder / quit commands shared by the toolbar, start screen, shortcuts and window close. */
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { hasContent, newUntitledProject, openOrCreateProject, releaseCurrentProject, saveProjectTo } from "../io/project";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
+import { hasContent, newUntitledProject, openOrCreateProject, releaseCurrentProject, saveNow, saveProjectTo } from "../io/project";
 import { useStore } from "../store/store";
 import { stop } from "./preview/player";
 import { askUnsaved } from "./UnsavedDialog";
@@ -21,11 +21,22 @@ function commitActiveInput() {
 async function leaveProject(): Promise<boolean> {
   stop();
   commitActiveInput();
+  let discard = false;
   if (useStore.getState().untitled && hasContent()) {
     const choice = await askUnsaved();
     if (choice === "cancel") return false;
     if (choice === "save" && !(await saveToFolder())) return false;
+    discard = choice === "discard";
   }
+  if (
+    !discard &&
+    !(await saveNow()) &&
+    !(await confirm(`The latest changes could not be saved:\n${useStore.getState().saveError ?? ""}\n\nLeave anyway and lose them?`, {
+      title: "Changes not saved",
+      kind: "warning",
+    }))
+  )
+    return false;
   await releaseCurrentProject();
   return true;
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { changeFps } from "../model/ops";
 import { useStore } from "../store/store";
+import { NumberField, parseNumberInput } from "./NumberField";
 
 export const RESOLUTION_PRESETS: [string, number, number][] = [
   ["FHD 1920×1080", 1920, 1080],
@@ -10,6 +11,10 @@ export const RESOLUTION_PRESETS: [string, number, number][] = [
   ["Square 1080×1080", 1080, 1080],
 ];
 export const FPS_PRESETS = [24, 25, 30, 50, 60];
+/** Limits of the file format (schema): sizes 16–8192 px, 1–120 fps, whole numbers. */
+export const SIZE_RANGE = { min: 16, max: 8192, integer: true };
+export const FPS_RANGE = { min: 1, max: 120, integer: true };
+const clampTo = (v: number, range: typeof SIZE_RANGE, fallback: number) => parseNumberInput(String(v), range) ?? fallback;
 
 export function ResolutionInput({ width, height, onChange }: { width: number; height: number; onChange: (w: number, h: number) => void }) {
   const match = RESOLUTION_PRESETS.find(([, w, h]) => w === width && h === height);
@@ -29,25 +34,9 @@ export function ResolutionInput({ width, height, onChange }: { width: number; he
         ))}
         <option value="custom">Custom</option>
       </select>
-      <input
-        type="number"
-        min={16}
-        max={8192}
-        step={2}
-        value={width}
-        style={{ width: 80 }}
-        onChange={(e) => onChange(Number(e.target.value), height)}
-      />
+      <NumberField {...SIZE_RANGE} step={2} width={80} value={width} onCommit={(v) => onChange(v, height)} />
       ×
-      <input
-        type="number"
-        min={16}
-        max={8192}
-        step={2}
-        value={height}
-        style={{ width: 80 }}
-        onChange={(e) => onChange(width, Number(e.target.value))}
-      />
+      <NumberField {...SIZE_RANGE} step={2} width={80} value={height} onCommit={(v) => onChange(width, v)} />
       {(width % 2 !== 0 || height % 2 !== 0) && <span style={{ color: "var(--danger)" }}>H.264 needs even sizes</span>}
     </div>
   );
@@ -62,9 +51,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   const apply = () => {
     edit((d) => {
-      if (fps !== d.settings.fps) changeFps(d, fps);
-      d.settings.width = Math.max(16, Math.round(w));
-      d.settings.height = Math.max(16, Math.round(h));
+      const nextFps = clampTo(fps, FPS_RANGE, d.settings.fps);
+      if (nextFps !== d.settings.fps) changeFps(d, nextFps);
+      d.settings.width = clampTo(w, SIZE_RANGE, d.settings.width);
+      d.settings.height = clampTo(h, SIZE_RANGE, d.settings.height);
     });
     onClose();
   };
@@ -97,14 +87,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 ))}
                 <option value="custom">Custom</option>
               </select>
-              <input
-                type="number"
-                min={1}
-                max={120}
-                value={fps}
-                style={{ width: 70 }}
-                onChange={(e) => setFps(Math.max(1, Math.round(Number(e.target.value))))}
-              />
+              <NumberField {...FPS_RANGE} value={fps} onCommit={setFps} />
             </div>
           </div>
           {fps !== settings.fps && <p className="dim small">Changing fps converts every clip timecode, keeping positions in seconds.</p>}

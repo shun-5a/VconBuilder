@@ -24,6 +24,7 @@ import {
 } from "./backend";
 
 const SAVE_DELAY_MS = 300;
+const SAVE_RETRY_MS = 3000;
 const RECENTS_KEY = "vcon.recentProjects";
 
 /** Last text we wrote or read, so our own writes coming back through the watcher are ignored. */
@@ -31,6 +32,7 @@ let lastText = "";
 /** Path of the open project's file (`<folder name>.vcb`). */
 let filePath = "";
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let unlisten: Array<() => void> = [];
 
 export function getRecentProjects(): string[] {
@@ -113,6 +115,11 @@ async function reloadFromDisk() {
     if (useStore.getState().loadError) useStore.setState({ loadError: null });
     return;
   }
+  if (useStore.getState().saveError) {
+    // Local changes are not on disk yet; replacing them with the file would lose them.
+    useStore.setState({ notice: "The project file changed outside the app, but local changes are not saved yet; keeping them" });
+    return;
+  }
   const parsed = parseProject(text);
   if (!parsed.ok) {
     useStore.setState({ loadError: parsed.error });
@@ -127,19 +134,48 @@ async function reloadFromDisk() {
   useStore.getState().replaceFromDisk(parsed.project);
 }
 
-export async function saveNow() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = undefined;
+/**
+ * Writes the project if it changed; returns whether the file is now up to date.
+ * Never writes a project the file format would reject (it could not be opened again). A failed write
+ * is retried every few seconds, and `saveError` stays set until a save succeeds.
+ */
+export async function saveNow(): Promise<boolean> {
+  clearTimeout(saveTimer);
+  clearTimeout(retryTimer);
+  saveTimer = retryTimer = undefined;
   const { dir, project } = useStore.getState();
-  if (!dir || !project) return;
+  if (!dir || !project) return true;
   const text = serializeProject(project);
-  if (text === lastText) return;
-  lastText = text;
+  const setError = (saveError: string | null) => {
+    if (useStore.getState().saveError !== saveError) useStore.setState({ saveError });
+  };
+  if (text === lastText) {
+    setError(null);
+    return true;
+  }
+  const check = parseProject(text);
+  if (!check.ok) {
+    setError(`Not saved: the project contains invalid values (undo the last change)
+${check.error}`);
+    return false;
+  }
   try {
     await writeTextAtomic(filePath, text);
+    lastText = text;
+    setError(null);
+    return true;
   } catch (e) {
-    useStore.setState({ notice: `Save failed: ${e}` });
+    setError(`Save failed, retrying: ${e instanceof Error ? e.message : e}`);
+    retryTimer = setTimeout(saveNow, SAVE_RETRY_MS);
+    return false;
   }
+}
+
+/** Stops pending / retried saves (when leaving the project). */
+function cancelPendingSaves() {
+  clearTimeout(saveTimer);
+  clearTimeout(retryTimer);
+  saveTimer = retryTimer = undefined;
 }
 
 /** Saves shortly after every local edit (the JSON file is always the source of truth). */
@@ -197,6 +233,7 @@ export function hasContent(): boolean {
 
 async function leaveCurrent() {
   await saveNow();
+  cancelPendingSaves();
   stopWatching();
   await stopWatchingDir();
 }

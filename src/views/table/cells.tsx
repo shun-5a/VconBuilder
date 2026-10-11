@@ -223,6 +223,8 @@ function TextInput({ value, onCommit }: { value: string; onCommit: (v: string) =
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLTextAreaElement>(null);
   const focused = useRef(false);
+  // Escape blurs right away, before the draft reset reaches onBlur, so the blur must know to skip the commit.
+  const cancelled = useRef(false);
   useEffect(() => {
     if (!focused.current) setDraft(value);
   }, [value]);
@@ -243,10 +245,12 @@ function TextInput({ value, onCommit }: { value: string; onCommit: (v: string) =
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         focused.current = false;
-        if (draft !== value) onCommit(draft);
+        if (cancelled.current) cancelled.current = false;
+        else if (draft !== value) onCommit(draft);
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
+          cancelled.current = true;
           setDraft(value);
           (e.target as HTMLTextAreaElement).blur();
         }
@@ -285,7 +289,13 @@ function TcInput({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [bad, setBad] = useState(false);
+  const cancelled = useRef(false);
   const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(null);
+      return;
+    }
     if (draft === null) return;
     const f = parseTcInput(draft, fps, frames);
     if (f === null) {
@@ -308,7 +318,7 @@ function TcInput({
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         if (e.key === "Escape") {
-          setDraft(null);
+          cancelled.current = true;
           (e.target as HTMLInputElement).blur();
         }
       }}

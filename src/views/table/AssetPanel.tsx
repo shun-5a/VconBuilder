@@ -325,7 +325,11 @@ function FileRenameInput({ rel, onDone }: { rel: string; onDone: () => void }) {
   const name = fileName(rel);
   const dot = name.lastIndexOf(".");
   const [value, setValue] = useState(name);
+  // Escape ends editing without renaming; the blur that follows (or unmounting) must not commit.
+  const done = useRef(false);
   const commit = async () => {
+    if (done.current) return;
+    done.current = true;
     if (value.trim() && value.trim() !== name) await renameAsset(rel, value.trim());
     onDone();
   };
@@ -341,7 +345,7 @@ function FileRenameInput({ rel, onDone }: { rel: string; onDone: () => void }) {
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         if (e.key === "Escape") {
-          setValue(name);
+          done.current = true;
           onDone();
         }
       }}
