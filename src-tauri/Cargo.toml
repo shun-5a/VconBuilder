@@ -1,0 +1,24 @@
+[package]
+name = "vcon-builder"
+version = "0.1.0"
+description = "Timecode-based storyboard / video-conte builder"
+edition = "2021"
+rust-version = "1.89"
+resolver = "3"
+
+[lib]
+name = "vcon_builder_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notify = "8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+percent-encoding = "2"
+tauri-plugin-single-instance = "2"
