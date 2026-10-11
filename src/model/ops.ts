@@ -385,16 +385,29 @@ export function renameMediaRefs(p: Project, from: string, to: string) {
   }
 }
 
-/** Re-times every timecode for a new frame rate, keeping positions in seconds. */
+/**
+ * Re-times every timecode for a new frame rate, keeping positions in seconds. Rounding must not create
+ * empty clips or overlaps (e.g. 60 → 24 fps turns frames 2..3 into 1..1): every clip keeps at least one
+ * frame, and a clip that would overlap the previous one is pushed back.
+ */
 export function changeFps(p: Project, fps: number) {
   const old = p.settings.fps;
   if (old === fps) return;
-  const conv = (tc: string) => framesToTc(Math.round((tcToFrames(tc, old) * fps) / old), fps);
+  const toNew = (tc: string) => Math.round((tcToFrames(tc, old) * fps) / old);
   for (const t of p.tracks) {
+    sortClips(t, old);
+    let prevEnd = 0;
     for (const c of t.clips) {
-      c.start = conv(c.start);
-      c.end = conv(c.end);
-      if (c.offset) c.offset = conv(c.offset);
+      let s = toNew(c.start);
+      let e = Math.max(toNew(c.end), s + 1);
+      if (s < prevEnd) {
+        e += prevEnd - s;
+        s = prevEnd;
+      }
+      c.start = framesToTc(s, fps);
+      c.end = framesToTc(e, fps);
+      if (c.offset) c.offset = framesToTc(toNew(c.offset), fps);
+      prevEnd = e;
     }
   }
   p.settings.fps = fps;

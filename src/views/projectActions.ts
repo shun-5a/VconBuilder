@@ -2,7 +2,16 @@
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
-import { hasContent, newUntitledProject, openOrCreateProject, releaseCurrentProject, saveNow, saveProjectTo } from "../io/project";
+import { fileExists, projectFile } from "../io/backend";
+import {
+  forgetRecent,
+  hasContent,
+  newUntitledProject,
+  openOrCreateProject,
+  releaseCurrentProject,
+  saveNow,
+  saveProjectTo,
+} from "../io/project";
 import { useStore } from "../store/store";
 import { stop } from "./preview/player";
 import { askUnsaved } from "./UnsavedDialog";
@@ -53,6 +62,12 @@ export async function openProject(dir?: string) {
   try {
     const target = dir ?? (await open({ directory: true, title: "Open a project folder (an empty folder creates a new project)" }));
     if (typeof target !== "string" || target === useStore.getState().dir) return;
+    // A recent project that was moved or deleted must not be silently recreated as an empty one.
+    if (dir && !(await fileExists(await projectFile(dir)))) {
+      forgetRecent(dir);
+      useStore.setState({ notice: `${dir} has no project file any more (moved or deleted); removed from recent projects` });
+      return;
+    }
     if (await leaveProject()) await openOrCreateProject(target);
   } catch (e) {
     report(e);

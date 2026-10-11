@@ -182,7 +182,13 @@ export const useStore = create<State & Actions>()((set, get) => ({
     const { past, future, project, revision } = get();
     if (!future.length || !project) return;
     const next = future[0];
-    set({ project: next, past: [...past, project], future: future.slice(1), revision: revision + 1, warnings: validateProject(next) });
+    set({
+      project: next,
+      past: [...past, project].slice(-HISTORY_LIMIT),
+      future: future.slice(1),
+      revision: revision + 1,
+      warnings: validateProject(next),
+    });
   },
 
   select(ref) {
