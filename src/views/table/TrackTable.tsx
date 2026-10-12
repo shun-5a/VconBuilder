@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { clipAt, endF, findClip, insertClipAfter, removeClip, startF } from "../../model/ops";
+import { clipAt, endF, findClip, insertClipAfter, removeClip, startF, swapClip } from "../../model/ops";
 import type { Track } from "../../model/schema";
 import { framesToTc } from "../../model/timecode";
 import { useStore } from "../../store/store";
@@ -95,6 +95,7 @@ export function TrackTable({ track }: { track: Track }) {
                     .filter(Boolean)
                     .join(" ");
                   const ref = { trackId: track.id, clipId: c.id };
+                  const index = track.clips.indexOf(c);
                   return (
                     <tr
                       key={c.id}
@@ -110,6 +111,32 @@ export function TrackTable({ track }: { track: Track }) {
                     >
                       <td className="timecell">
                         <TimeRange track={track} clip={c} />
+                        {/* Swap with the row above / below (both keep their lengths), or delete the row. */}
+                        <span className="row-tools">
+                          <button
+                            className="ghost"
+                            disabled={index === 0}
+                            onClick={() => edit((d) => swapClip(d, ref, -1))}
+                            title="Swap with the row above (lengths are kept)"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            className="ghost"
+                            disabled={index === track.clips.length - 1}
+                            onClick={() => edit((d) => swapClip(d, ref, 1))}
+                            title="Swap with the row below (lengths are kept)"
+                          >
+                            ▼
+                          </button>
+                          <button
+                            className="ghost"
+                            onClick={() => edit((d) => removeClip(d, ref, true))}
+                            title="Delete row (later rows move up)"
+                          >
+                            ✕
+                          </button>
+                        </span>
                       </td>
                       {cols.map((col) => (
                         <ClipCell key={columnKey(col)} track={track} clip={c} col={col} />

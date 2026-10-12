@@ -994,6 +994,24 @@ table.grid td.timecell {
   position: relative;
   padding: 0;
 }
+table.grid td.timecell .row-tools {
+  display: none;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  flex-direction: column;
+  background: var(--bg2);
+  border-radius: 4px;
+}
+table.grid tr:hover td.timecell .row-tools {
+  display: flex;
+}
+table.grid td.timecell .row-tools button {
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 1.4;
+  min-width: 0;
+}
 .time-range {
   display: flex;
   flex-direction: column;

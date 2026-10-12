@@ -263,6 +263,27 @@ export function removeClip(p: Project, ref: ClipRef, ripple: boolean) {
 }
 
 /**
+ * Swaps a row with the one above (delta -1) or below (+1) while both keep their lengths: the pair still
+ * covers the same span (and the gap between them stays), so nothing else on the track moves.
+ * e.g. 01:00–02:00 and 02:00–04:00 become 01:00–03:00 (the second row) and 03:00–04:00 (the first).
+ */
+export function swapClip(p: Project, ref: ClipRef, delta: -1 | 1) {
+  const fps = p.settings.fps;
+  const t = getTrack(p, ref.trackId);
+  const i = t.clips.findIndex((c) => c.id === ref.clipId);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= t.clips.length) return;
+  const [a, b] = i < j ? [t.clips[i], t.clips[j]] : [t.clips[j], t.clips[i]];
+  const span0 = startF(a, fps);
+  const gap = startF(b, fps) - endF(a, fps);
+  const durA = endF(a, fps) - startF(a, fps);
+  const durB = endF(b, fps) - startF(b, fps);
+  setRange(b, span0, span0 + durB, fps);
+  setRange(a, span0 + durB + gap, span0 + durB + gap + durA, fps);
+  sortClips(t, fps);
+}
+
+/**
  * Moves a clip so it starts at `start`.
  * ripple: the clip and everything after it shift together (can't move before the previous clip's end).
  * otherwise: the clip lands in the free slot nearest to `start` that fits its duration.
