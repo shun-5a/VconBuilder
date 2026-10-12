@@ -3,7 +3,7 @@
  * (plus "Ungrouped"). Groups only organise the view; files stay in assets/.
  */
 import { useRef, useState } from "react";
-import { assetUrl, joinPath, revealPath } from "../../io/backend";
+import { assetUrl, joinPath, openPath, revealPath } from "../../io/backend";
 import { ASSET_MIME, importDrop, isAcceptableDrag, snapshotDrop } from "../../io/dnd";
 import { addGroup, assignAssets, deleteGroup, filesInGroup, moveGroup, renameGroup, UNGROUPED } from "../../model/assetGroups";
 import { mediaKind } from "../../render/media";
@@ -85,6 +85,10 @@ export function AssetPanel() {
     } else setSelected([rel]);
   };
 
+  /** Opens the file in the app the OS uses for it (image viewer, video player...). */
+  const open = (rel: string) =>
+    openPath(joinPath(dir, rel)).catch((e) => useStore.setState({ notice: `Could not open ${fileName(rel)}: ${e}` }));
+
   const tile = (rel: string) => {
     const kind = mediaKind(rel);
     const url = assetUrl(dir, rel);
@@ -94,7 +98,7 @@ export function AssetPanel() {
         key={rel}
         className={`asset ${isSelected ? "selected" : ""}`}
         draggable={renaming !== rel}
-        title={`${rel}\nDrag onto the timeline or another group · double-click the name to rename`}
+        title={`${rel}\nDouble-click the picture to open it · double-click the name to rename · drag onto the timeline or another group`}
         onClick={(e) => clickFile(e, rel)}
         onDragStart={(e) => {
           const group = isSelected ? selected : [rel];
@@ -110,7 +114,7 @@ export function AssetPanel() {
           setMenu({ x: e.clientX, y: e.clientY, kind: "file", rel });
         }}
       >
-        <div className="asset-thumb">
+        <div className="asset-thumb" onDoubleClick={() => void open(rel)}>
           {kind === "image" && <img src={url} alt="" draggable={false} loading="lazy" />}
           {kind === "video" && <video src={`${url}#t=0.5`} muted preload="metadata" />}
           {kind === "audio" && "♪"}
@@ -237,6 +241,15 @@ export function AssetPanel() {
               </>
             )}
             <div className="menu-sep" />
+            <button
+              className="ghost"
+              onClick={() => {
+                void open(menu.rel);
+                setMenu(null);
+              }}
+            >
+              Open
+            </button>
             <button
               className="ghost"
               onClick={() => {

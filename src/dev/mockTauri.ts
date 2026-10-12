@@ -105,6 +105,10 @@ function handle(cmd: string, a: Record<string, any> = {}): unknown {
     case "reveal_path":
       console.info("[mock] reveal", a.path);
       return null;
+    case "open_path":
+      console.info("[mock] open", a.path);
+      (window as any).__mockOpened = a.path;
+      return null;
     case "download_asset":
       throw new Error("download is not available in the browser mock");
     case "list_untitled":

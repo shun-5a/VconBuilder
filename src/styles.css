@@ -673,10 +673,6 @@ table.grid td.gap {
 .media-cell:hover .media-tools {
   display: inline-flex;
 }
-.media-cell select {
-  font-size: 11px;
-  max-width: 100%;
-}
 .media-empty {
   color: var(--dim);
   font-size: 11px;
@@ -923,21 +919,63 @@ table.grid td.gap {
 .timeline-scroll + .no-tracks {
   top: 24px;
 }
-.menu-list.picker {
-  left: 0;
-  right: auto;
-  min-width: 200px;
+/* Media picker (choosing a file for a media cell) */
+.menu-list.media-picker {
+  width: 300px;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  flex-wrap: nowrap;
 }
-.picker-row {
+.media-picker .pick-group-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
+  margin-top: 4px;
+  font-weight: 600;
+  color: var(--text);
 }
-.picker-row:hover {
+.media-picker .pick-group-head .caret {
+  width: 10px;
+  color: var(--dim);
+}
+.media-picker .pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  min-width: 0;
+}
+.media-picker .pick-row.on {
+  background: var(--sel-soft);
+}
+.media-picker .pick-group .pick-row {
+  padding-left: 18px;
+}
+.media-picker .pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-picker .pick-thumb {
+  flex: none;
+  width: 64px;
+  height: 36px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 3px;
+}
+.media-picker .pick-audio,
+.media-picker .pick-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
   background: var(--bg3);
+}
+.media-picker .pick-empty {
+  padding: 6px;
 }
 .kind-choices {
   display: grid;
@@ -993,6 +1031,24 @@ table.grid td.gap {
 table.grid td.timecell {
   position: relative;
   padding: 0;
+}
+table.grid td.timecell .row-tools {
+  display: none;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  flex-direction: column;
+  background: var(--bg2);
+  border-radius: 4px;
+}
+table.grid tr:hover td.timecell .row-tools {
+  display: flex;
+}
+table.grid td.timecell .row-tools button {
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 1.4;
+  min-width: 0;
 }
 .time-range {
   display: flex;

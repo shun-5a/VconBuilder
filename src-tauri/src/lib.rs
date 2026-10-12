@@ -585,6 +585,25 @@ async fn download_asset(dir: String, url: String) -> Result<String, String> {
     .map_err(err)?
 }
 
+/// Opens a project file with the app the OS associates with it (as double-clicking it in Explorer would).
+#[tauri::command]
+fn open_path(app: tauri::AppHandle, window: tauri::Window, path: String) -> Result<(), String> {
+    let path = checked_path(&app, &window, &path)?;
+    if !path.is_file() {
+        return Err(format!("{} does not exist", path.display()));
+    }
+    #[cfg(target_os = "windows")]
+    // Explorer needs backslashes (paths from the page use "/").
+    let result = std::process::Command::new("explorer")
+        .arg(path.to_string_lossy().replace('/', "\\"))
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&path).spawn();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
+    result.map(|_| ()).map_err(err)
+}
+
 /// Shows a file in Explorer / Finder.
 #[tauri::command]
 fn reveal_path(path: String) -> Result<(), String> {
@@ -824,6 +843,7 @@ pub fn run() {
             remove_file,
             download_asset,
             reveal_path,
+            open_path,
             resolve_in_project,
             list_untitled,
             create_untitled_dir,
