@@ -128,6 +128,27 @@ describe("ops", () => {
     ]);
   });
 
+  it("swaps a row with its neighbour and keeps both lengths and the span", async () => {
+    const { swapClip } = await import("./ops");
+    const p = produce(sample(), (d) => {
+      d.tracks[0].clips = [
+        { id: "a", start: "00:01:00:00", end: "00:02:00:00", desc: "A" },
+        { id: "b", start: "00:02:00:00", end: "00:04:00:00", desc: "B" },
+        { id: "c", start: "00:05:00:00", end: "00:06:00:00", desc: "C" },
+      ];
+      swapClip(d, { trackId: d.tracks[0].id, clipId: "a" }, 1);
+    });
+    const rows = () => p.tracks[0].clips.map((c) => `${c.desc}:${c.start}-${c.end}`);
+    expect(rows()).toEqual(["B:00:01:00:00-00:03:00:00", "A:00:03:00:00-00:04:00:00", "C:00:05:00:00-00:06:00:00"]);
+    // The gap before the next row is kept when swapping across it.
+    const q = produce(p, (d) => swapClip(d, { trackId: d.tracks[0].id, clipId: "c" }, -1));
+    expect(q.tracks[0].clips.map((c) => `${c.desc}:${c.start}-${c.end}`)).toEqual([
+      "B:00:01:00:00-00:03:00:00",
+      "C:00:03:00:00-00:04:00:00",
+      "A:00:05:00:00-00:06:00:00",
+    ]);
+  });
+
   it("rejects reserved or duplicate column keys", async () => {
     const { parseProject } = await import("./serialize");
     const track = (fields: object[]) => JSON.stringify({ tracks: [{ id: "v", name: "V", kind: "visual", fields }] });
