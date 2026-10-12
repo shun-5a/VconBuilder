@@ -23,6 +23,8 @@ export const downloadAsset = (dir: string, url: string) => invoke<string>("downl
 export const createEmptyFile = (path: string) => invoke<void>("create_empty_file", { path });
 export const removeFile = (path: string) => invoke<void>("remove_file", { path });
 export const revealPath = (path: string) => invoke<void>("reveal_path", { path });
+/** Opens a project file in the app the OS associates with it. */
+export const openPath = (path: string) => invoke<void>("open_path", { path });
 
 /** Writes raw bytes at `position` in the file at absolute `path`. */
 export function writeChunk(path: string, position: number, data: Uint8Array) {
