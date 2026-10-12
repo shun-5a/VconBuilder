@@ -21,6 +21,7 @@ import { currentPreset, useStore } from "../../store/store";
 import { acceptsMedia, DEFAULT_STILL_SECONDS } from "../actions";
 import { Popover } from "../Popover";
 import { updatePreview } from "../preview/presets";
+import { MediaPicker } from "./MediaPicker";
 
 // ------------------------------------------------------------------ column model
 
@@ -331,13 +332,14 @@ function MediaInput({ track, value, onCommit }: { track: Track; value: string; o
   const assets = useStore((s) => s.assets);
   useStore((s) => s.assetEpoch); // re-render with the new URL when the file is replaced on disk
   const [picking, setPicking] = useState(false);
+  const cellRef = useRef<HTMLDivElement>(null);
   const kind = mediaKind(value);
   const url = value ? assetUrl(dir, value) : "";
   const choices = assets.filter((a) => acceptsMedia(track.kind, a));
 
   // Media is chosen from the assets list (drag & drop goes to the timeline / Assets tab).
   return (
-    <div className="media-cell">
+    <div className="media-cell" ref={cellRef}>
       {value && kind === "image" && <img src={url} alt="" draggable={false} />}
       {value && kind === "video" && <video src={url} muted preload="metadata" />}
       {value ? (
@@ -346,26 +348,23 @@ function MediaInput({ track, value, onCommit }: { track: Track; value: string; o
           {value.replace(/^assets\//, "")}
         </span>
       ) : (
-        !picking && <span className="media-empty">Click to choose</span>
+        <span className="media-empty">Click to choose</span>
       )}
-      {picking ? (
-        <select
-          autoFocus
+      {/* Mounted per opening, so its groups start from the Assets tab state each time. */}
+      {picking && (
+        <MediaPicker
+          anchor={cellRef}
+          open
+          choices={choices}
           value={value}
-          onChange={(e) => {
-            onCommit(e.target.value || null);
+          onPick={(rel) => {
             setPicking(false);
+            if (rel !== (value || null)) onCommit(rel);
           }}
-          onBlur={() => setPicking(false)}
-        >
-          <option value="">(none)</option>
-          {choices.map((a) => (
-            <option key={a} value={a}>
-              {a.replace(/^assets\//, "")}
-            </option>
-          ))}
-        </select>
-      ) : (
+          onClose={() => setPicking(false)}
+        />
+      )}
+      {!picking && (
         <div className="media-tools">
           <button className="ghost icon" onClick={() => setPicking(true)} title="Choose from assets">
             …
@@ -377,7 +376,7 @@ function MediaInput({ track, value, onCommit }: { track: Track; value: string; o
           )}
         </div>
       )}
-      {!value && !picking && <div style={{ position: "absolute", inset: 0, cursor: "pointer" }} onClick={() => setPicking(true)} />}
+      {!value && <div style={{ position: "absolute", inset: 0, cursor: "pointer" }} onClick={() => setPicking(!picking)} />}
     </div>
   );
 }
