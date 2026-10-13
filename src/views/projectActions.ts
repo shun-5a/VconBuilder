@@ -2,12 +2,13 @@
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
-import { fileExists, projectFile } from "../io/backend";
+import { fileExists, PROJECT_EXT, projectFile } from "../io/backend";
 import {
+  currentProjectFile,
   forgetRecent,
   hasContent,
   newUntitledProject,
-  openOrCreateProject,
+  openProjectPath,
   releaseCurrentProject,
   saveNow,
   saveProjectTo,
@@ -58,17 +59,30 @@ export async function newProject() {
   }
 }
 
-export async function openProject(dir?: string) {
+/**
+ * Opens a project: `recent` (a .vcb file, or a folder from the recent list of older versions) or a .vcb file
+ * picked in the dialog. The chosen file itself is opened, even when other .vcb files sit next to it.
+ */
+export async function openProject(recent?: string) {
   try {
-    const target = dir ?? (await open({ directory: true, title: "Open a project folder (an empty folder creates a new project)" }));
-    if (typeof target !== "string" || target === useStore.getState().dir) return;
+    let target = recent;
+    if (!target) {
+      const file = await open({
+        title: "Open a project",
+        filters: [{ name: "VconBuilder project", extensions: [PROJECT_EXT] }],
+      });
+      if (typeof file !== "string") return;
+      target = file;
+    }
+    if (target === currentProjectFile() || target === useStore.getState().dir) return;
     // A recent project that was moved or deleted must not be silently recreated as an empty one.
-    if (dir && !(await fileExists(await projectFile(dir)))) {
-      forgetRecent(dir);
-      useStore.setState({ notice: `${dir} has no project file any more (moved or deleted); removed from recent projects` });
+    const recentFile = recent && (/\.vcb$/i.test(recent) ? recent : await projectFile(recent));
+    if (recent && recentFile && !(await fileExists(recentFile))) {
+      forgetRecent(recent);
+      useStore.setState({ notice: `${recent} does not exist any more (moved or deleted); removed from recent projects` });
       return;
     }
-    if (await leaveProject()) await openOrCreateProject(target);
+    if (await leaveProject()) await openProjectPath(target);
   } catch (e) {
     report(e);
   }

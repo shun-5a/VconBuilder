@@ -149,6 +149,68 @@ describe("ops", () => {
     ]);
   });
 
+  it("slips the source of a clip without moving it, within the source", async () => {
+    const { slipClip } = await import("./ops");
+    const base = produce(sample(), (d) => {
+      d.tracks[0].clips = [{ id: "v", start: "00:00:02:00", end: "00:00:04:00", ref: "assets/a.mp4", offset: "00:00:01:00" }];
+    });
+    const ref = { trackId: base.tracks[0].id, clipId: "v" };
+    const at = (offset: number, max?: number) => produce(base, (d) => slipClip(d, ref, offset, max)).tracks[0].clips[0];
+    expect(at(45)).toMatchObject({ start: "00:00:02:00", end: "00:00:04:00", offset: "00:00:01:15" });
+    expect(at(-10).offset).toBeUndefined(); // never before the start of the source
+    expect(at(500, 90).offset).toBe("00:00:03:00"); // a 5 s source: a 2 s clip can start at 3 s at most
+  });
+
+  it("duplicates a clip next to the original", async () => {
+    const { duplicateClip, moveClip } = await import("./ops");
+    const p = produce(sample(), (d) => {
+      d.tracks[0].clips = [{ id: "a", start: "00:00:00:00", end: "00:00:02:00", desc: "A" }];
+      const id = duplicateClip(d, { trackId: d.tracks[0].id, clipId: "a" });
+      moveClip(d, { trackId: d.tracks[0].id, clipId: id }, 30); // dropped on the original: lands right after it
+    });
+    expect(p.tracks[0].clips.map((c) => `${c.desc}:${c.start}-${c.end}`)).toEqual([
+      "A:00:00:00:00-00:00:02:00",
+      "A:00:00:02:00-00:00:04:00",
+    ]);
+    expect(new Set(p.tracks[0].clips.map((c) => c.id)).size).toBe(2);
+  });
+
+  it("adds text tracks with a required Text column, shown through preset overlays", async () => {
+    const { addTrack, addField, removeField, removeTrack } = await import("./ops");
+    const { toggleScreen, shownOverlays } = await import("./preview");
+    let id = "";
+    let p = produce(sample(), (d) => {
+      id = addTrack(d, "text", "Narration");
+    });
+    const t = () => p.tracks.find((x) => x.id === id)!;
+    expect(t().fields[0]).toEqual({ key: "text", label: "Text", type: "text" });
+    for (const preset of p.exportPresets) expect(preset.overlays).toContain(id);
+    p = produce(p, (d) => {
+      const key = addField(d, id, "media");
+      expect(d.tracks.find((x) => x.id === id)!.fields.find((f) => f.key === key)?.type).toBe("text");
+      removeField(d, id, "text"); // required: stays
+      toggleScreen(d, d.exportPresets[0], id);
+    });
+    expect(t().fields[0].key).toBe("text");
+    expect(shownOverlays(p, p.exportPresets[0])).toEqual([]);
+    expect(shownOverlays(p, p.exportPresets[1]).map((x) => x.id)).toEqual([id]);
+    p = produce(p, (d) => removeTrack(d, id));
+    for (const preset of p.exportPresets) expect(preset.overlays).toEqual([]);
+  });
+
+  it("reads text tracks and presets without overlays", async () => {
+    const { parseProject } = await import("./serialize");
+    const r = parseProject(
+      JSON.stringify({
+        tracks: [{ id: "t", name: "T", kind: "text", fields: [{ key: "note", label: "Notes" }] }],
+        exportPresets: [{ id: "p", name: "P" }],
+      }),
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(r.project.tracks[0].fields[0].key).toBe("note"); // the first text column becomes the Text column
+    expect(r.project.exportPresets[0].overlays).toEqual([]);
+  });
+
   it("rejects reserved or duplicate column keys", async () => {
     const { parseProject } = await import("./serialize");
     const track = (fields: object[]) => JSON.stringify({ tracks: [{ id: "v", name: "V", kind: "visual", fields }] });

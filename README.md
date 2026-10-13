@@ -31,14 +31,17 @@ The window has the preview (top left), the timeline (bottom left) and the right 
 
 - Shows the frame at the playhead exactly as it is exported
 - **Presets** are the views you export: saved with the project and edited directly. Each preset has its own visible tracks
-  (`screens`), inset / caption columns per track (`columns`), inset placement and output settings (✎), so one set of tables
+  (`screens`; text tracks in `overlays`), inset / caption columns per track (`columns`), inset placement and output settings (✎), so one set of tables
   can be exported as several differently arranged videos
 
 ### Timeline
 
 - Move / trim / split clips, snapping, waveforms and video thumbnails
 - Alt+[ / Alt+] set the selected clip's IN / OUT to the playhead; Alt+drag on a clip edge also shifts the following clips
-- ◉ in a track header: visual tracks are shown / hidden in the current preset, audio tracks are muted / unmuted
+- Alt+drag a clip to place a copy; Ctrl+drag a video / audio clip to slip it (change which part of the source plays, keeping its place and length)
+- Three kinds of tracks: visual (images / videos), audio, and text (text over the whole frame, e.g. titles or narration).
+  Text tracks run across all screens in the preset's caption style, stacked with the captions so they never cover them
+- ◉ in a track header: visual and text tracks are shown / hidden in the current preset, audio tracks are muted / unmuted
 
 ### Conte tab (the tables)
 

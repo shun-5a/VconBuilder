@@ -13,7 +13,7 @@ import {
   startF,
   trimClip,
 } from "../../model/ops";
-import { captionKeys, insetKeys, mainKey, toggleCaption, toggleInset } from "../../model/preview";
+import { captionKeys, insetKeys, requiredKey, toggleCaption, toggleInset } from "../../model/preview";
 import type { Clip, Field, Track } from "../../model/schema";
 import { framesToTc, parseTcInput } from "../../model/timecode";
 import { mediaKind } from "../../render/media";
@@ -66,7 +66,7 @@ function ShowToggle({ track, field }: { track: Track; field: Field }) {
 function FieldHeader({ track, field, className }: { track: Track; field: Field; className?: string }) {
   const [editing, setEditing] = useState(false);
   // The first column (Reference) is required: always the picture / audio file, never moved or deleted.
-  const main = field.key === mainKey(track);
+  const main = field.key === requiredKey(track);
   const index = track.fields.indexOf(field);
   const edit = useStore((s) => s.edit);
   const del = async () => {
@@ -119,7 +119,7 @@ function FieldHeader({ track, field, className }: { track: Track; field: Field; 
           <span className="th-tools">
             <button
               className="ghost"
-              disabled={index <= (mainKey(track) ? 1 : 0)}
+              disabled={index <= (requiredKey(track) ? 1 : 0)}
               onClick={() => edit((d) => moveField(d, track.id, field.key, -1))}
               title="Move left"
             >

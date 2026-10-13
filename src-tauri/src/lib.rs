@@ -105,9 +105,29 @@ fn project_file_in(dir: &Path) -> PathBuf {
     }
 }
 
+/// The folder's project file (see `project_file_in`). Refuses folders whose project file is ambiguous
+/// (several .vcb files, none named after the folder), instead of creating a new, empty one there.
 #[tauri::command]
-fn project_file(dir: String) -> String {
-    dunce_path(&project_file_in(Path::new(&dir)))
+fn project_file(dir: String) -> Result<String, String> {
+    let dir = PathBuf::from(dir);
+    let file = project_file_in(&dir);
+    if !file.is_file() {
+        let others = fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|e| is_project_file(&e.path()))
+                    .count()
+            })
+            .unwrap_or(0);
+        if others > 1 {
+            return Err(format!(
+                "{} has several .vcb files and none is named after the folder; open one with File ▸ Open",
+                dir.display()
+            ));
+        }
+    }
+    Ok(dunce_path(&file))
 }
 
 /// Comparable form of a folder path (resolves `..`, case-insensitive on Windows).
@@ -152,15 +172,18 @@ fn is_inside(path: &Path, dir: &Path) -> bool {
     p == d || p.starts_with(&format!("{}/", d.trim_end_matches('/')))
 }
 
-/// Project folder named by a launch argument: a .vcb file (its folder) or a folder.
-fn dir_from_arg(arg: &str, cwd: &Path) -> Option<PathBuf> {
+/// What a launch argument asks to open: a .vcb file (opened as it is) or a project folder.
+fn open_target_from_arg(arg: &str, cwd: &Path) -> Option<PathBuf> {
     let p = cwd.join(arg);
-    if p.is_file() && is_project_file(&p) {
-        p.parent().map(Path::to_path_buf)
-    } else if p.is_dir() {
-        Some(p)
+    ((p.is_file() && is_project_file(&p)) || p.is_dir()).then_some(p)
+}
+
+/// The project folder of an open target (the folder itself, or the folder of a .vcb file).
+fn target_dir(target: &Path) -> PathBuf {
+    if target.is_file() {
+        target.parent().map(Path::to_path_buf).unwrap_or_default()
     } else {
-        None
+        target.to_path_buf()
     }
 }
 
@@ -325,16 +348,16 @@ fn open_project(
     Ok(())
 }
 
-/// The folder this window was asked to open on launch (a double-clicked .vcb), once.
+/// What this window was asked to open on launch (a double-clicked .vcb file, or a folder), once.
 #[tauri::command]
-fn take_open_dir(window: tauri::Window, pending: tauri::State<PendingOpen>) -> Option<String> {
+fn take_open_path(window: tauri::Window, pending: tauri::State<PendingOpen>) -> Option<String> {
     pending.0.lock().unwrap().remove(window.label())
 }
 
 /// A second launch (double-clicking a .vcb while the app runs): focus the window that already has
-/// that project open, or open it in a new window.
-fn open_in_window(app: &tauri::AppHandle, dir: PathBuf) {
-    let key = same_dir_key(&dir);
+/// that project folder open, or open the file / folder in a new window.
+fn open_in_window(app: &tauri::AppHandle, target: PathBuf) {
+    let key = same_dir_key(&target_dir(&target));
     let open_in = app
         .state::<WatchState>()
         .0
@@ -356,7 +379,7 @@ fn open_in_window(app: &tauri::AppHandle, dir: PathBuf) {
         .0
         .lock()
         .unwrap()
-        .insert(label.clone(), dunce_path(&dir));
+        .insert(label.clone(), dunce_path(&target));
     let app = app.clone();
     // Windows are built off the single-instance callback (building inside it can deadlock on Windows).
     tauri::async_runtime::spawn(async move {
@@ -744,13 +767,20 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// "Save As": copies a whole project folder to `to`, which must not exist yet or be empty.
-/// The project file is renamed after the new folder (`<to name>.vcb`).
+/// The open project file (`file`, else the folder's own) is renamed after the new folder (`<to name>.vcb`).
 #[tauri::command]
-async fn copy_project(from: String, to: String) -> Result<(), String> {
-    blocking(move || copy_project_blocking(PathBuf::from(from), PathBuf::from(to))).await
+async fn copy_project(from: String, to: String, file: Option<String>) -> Result<(), String> {
+    blocking(move || {
+        copy_project_blocking(
+            PathBuf::from(from),
+            PathBuf::from(to),
+            file.map(PathBuf::from),
+        )
+    })
+    .await
 }
 
-fn copy_project_blocking(from: PathBuf, to: PathBuf) -> Result<(), String> {
+fn copy_project_blocking(from: PathBuf, to: PathBuf, file: Option<PathBuf>) -> Result<(), String> {
     if to.exists() && fs::read_dir(&to).map_err(err)?.next().is_some() {
         return Err(format!("{} already exists and is not empty", to.display()));
     }
@@ -758,8 +788,8 @@ fn copy_project_blocking(from: PathBuf, to: PathBuf) -> Result<(), String> {
         // It would be copied into itself again and again.
         return Err("Choose a location outside the project folder".into());
     }
-    // Decide the project file from the source (backups or other .vcb files may sit next to it).
-    let source_file = project_file_in(&from);
+    // The file that is open (backups or other .vcb files may sit next to it).
+    let source_file = file.unwrap_or_else(|| project_file_in(&from));
     copy_dir(&from, &to).map_err(err)?;
     let copied = to.join(source_file.file_name().unwrap_or_default());
     let wanted = to.join(format!(
@@ -778,8 +808,12 @@ pub fn run() {
         // Must be registered first: a second launch hands its arguments to this process and exits.
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let cwd = PathBuf::from(cwd);
-            match argv.iter().skip(1).find_map(|a| dir_from_arg(a, &cwd)) {
-                Some(dir) => open_in_window(app, dir),
+            match argv
+                .iter()
+                .skip(1)
+                .find_map(|a| open_target_from_arg(a, &cwd))
+            {
+                Some(target) => open_in_window(app, target),
                 None => {
                     if let Some(w) = app.webview_windows().values().next() {
                         let _ = w.unminimize();
@@ -795,15 +829,15 @@ pub fn run() {
         .setup(|app| {
             // First launch by double-clicking a .vcb: the main window opens that project.
             let cwd = std::env::current_dir().unwrap_or_default();
-            if let Some(dir) = std::env::args()
+            if let Some(target) = std::env::args()
                 .skip(1)
-                .find_map(|a| dir_from_arg(&a, &cwd))
+                .find_map(|a| open_target_from_arg(&a, &cwd))
             {
                 app.state::<PendingOpen>()
                     .0
                     .lock()
                     .unwrap()
-                    .insert("main".into(), dunce_path(&dir));
+                    .insert("main".into(), dunce_path(&target));
             }
             Ok(())
         })
@@ -829,7 +863,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             project_file,
-            take_open_dir,
+            take_open_path,
             read_text,
             file_exists,
             write_text_atomic,
@@ -873,7 +907,7 @@ mod tests {
         assert!(is_inside(&from.join("Copy of project"), &from));
         assert!(is_inside(&from.join("assets").join("x"), &from));
         assert!(!is_inside(&from.with_extension("copy"), &from));
-        assert!(copy_project_blocking(from.clone(), from.join("Copy of project")).is_err());
+        assert!(copy_project_blocking(from.clone(), from.join("Copy of project"), None).is_err());
         fs::remove_dir_all(&from).unwrap();
     }
 
@@ -887,7 +921,7 @@ mod tests {
         fs::write(from.join(format!(".{name}.vcb.tmp")), "ours").unwrap();
         let to = from.with_file_name(format!("{name}-copy"));
         let _ = fs::remove_dir_all(&to);
-        copy_project_blocking(from.clone(), to.clone()).unwrap();
+        copy_project_blocking(from.clone(), to.clone(), None).unwrap();
         let to_name = to.file_name().unwrap().to_string_lossy().to_string();
         assert_eq!(
             fs::read_to_string(to.join(format!("{to_name}.vcb"))).unwrap(),
@@ -898,5 +932,44 @@ mod tests {
         assert!(!to.join(format!(".{name}.vcb.tmp")).exists());
         fs::remove_dir_all(&from).unwrap();
         fs::remove_dir_all(&to).unwrap();
+    }
+
+    #[test]
+    fn copies_the_open_file_and_refuses_ambiguous_folders() {
+        let from = temp_project("pick");
+        fs::write(from.join("a.vcb"), "{\"a\":1}").unwrap();
+        fs::write(from.join("b.vcb"), "{\"b\":1}").unwrap();
+        // Two .vcb files, neither named after the folder: no silent new project.
+        assert!(project_file(dunce_path(&from)).is_err());
+
+        let to = from.with_file_name(format!(
+            "{}-copy",
+            from.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = fs::remove_dir_all(&to);
+        copy_project_blocking(from.clone(), to.clone(), Some(from.join("b.vcb"))).unwrap();
+        let to_name = to.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            fs::read_to_string(to.join(format!("{to_name}.vcb"))).unwrap(),
+            "{\"b\":1}"
+        );
+        assert!(to.join("a.vcb").is_file());
+        fs::remove_dir_all(&from).unwrap();
+        fs::remove_dir_all(&to).unwrap();
+    }
+
+    #[test]
+    fn launch_arguments_keep_the_file() {
+        let dir = temp_project("arg");
+        fs::write(dir.join("backup.vcb"), "{}").unwrap();
+        let target = open_target_from_arg("backup.vcb", &dir).unwrap();
+        assert_eq!(target, dir.join("backup.vcb"));
+        assert_eq!(target_dir(&target), dir);
+        assert_eq!(
+            open_target_from_arg(".", &dir).map(|p| target_dir(&p)),
+            Some(dir.join("."))
+        );
+        assert!(open_target_from_arg("missing.vcb", &dir).is_none());
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

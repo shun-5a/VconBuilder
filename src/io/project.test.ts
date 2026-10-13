@@ -26,7 +26,36 @@ vi.mock("./backend", () => ({
   bumpAssetVersion: () => {},
 }));
 
-const { openOrCreateProject, saveNow } = await import("./project");
+const { openOrCreateProject, openProjectPath, saveNow } = await import("./project");
+
+describe("opening a project file", () => {
+  beforeEach(() => {
+    disk.clear();
+    failWrites = false;
+  });
+
+  it("opens the chosen .vcb even when another one sits next to it, and saves back to it", async () => {
+    const main = emptyProject();
+    const backup = emptyProject();
+    backup.settings.width = 1280;
+    disk.set("C:/p/p.vcb", serializeProject(main));
+    disk.set("C:/p/backup.vcb", serializeProject(backup));
+    await openProjectPath("C:/p/backup.vcb");
+    expect(useStore.getState().project?.settings.width).toBe(1280);
+
+    useStore.getState().edit((d) => {
+      d.settings.height = 720;
+    });
+    await saveNow();
+    expect(disk.get("C:/p/backup.vcb")).toContain('"height": 720');
+    expect(disk.get("C:/p/p.vcb")).toBe(serializeProject(main)); // untouched
+  });
+
+  it("never creates an empty project for a .vcb that does not exist", async () => {
+    await expect(openProjectPath("C:/gone/gone.vcb")).rejects.toThrow(/does not exist/);
+    expect(disk.size).toBe(0);
+  });
+});
 
 describe("saveNow", () => {
   beforeEach(async () => {
