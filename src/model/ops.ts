@@ -263,6 +263,30 @@ export function removeClip(p: Project, ref: ClipRef, ripple: boolean) {
 }
 
 /**
+ * Slip edit: changes which part of the source a clip plays (its `offset`, in frames) without moving or
+ * resizing the clip. The offset stays >= 0 and, when the source length is known (`maxOffset` = source
+ * frames - clip frames), small enough that the clip does not run past the end of the source.
+ */
+export function slipClip(p: Project, ref: ClipRef, offset: number, maxOffset?: number) {
+  const fps = p.settings.fps;
+  const c = getClip(p, ref);
+  let o = Math.round(offset);
+  if (maxOffset !== undefined) o = Math.min(o, Math.max(0, Math.round(maxOffset)));
+  o = Math.max(0, o);
+  if (o > 0) c.offset = framesToTc(o, fps);
+  else delete c.offset;
+}
+
+/** Copies a clip (same place and values, new id) and returns the copy's id; move it with moveClip. */
+export function duplicateClip(p: Project, ref: ClipRef): string {
+  const t = getTrack(p, ref.trackId);
+  const c = getClip(p, ref);
+  const id = nextClipId(p, t);
+  t.clips.push({ ...c, id });
+  return id;
+}
+
+/**
  * Swaps a row with the one above (delta -1) or below (+1) while both keep their lengths: the pair still
  * covers the same span (and the gap between them stays), so nothing else on the track moves.
  * e.g. 01:00–02:00 and 02:00–04:00 become 01:00–03:00 (the second row) and 03:00–04:00 (the first).

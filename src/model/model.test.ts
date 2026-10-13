@@ -149,6 +149,32 @@ describe("ops", () => {
     ]);
   });
 
+  it("slips the source of a clip without moving it, within the source", async () => {
+    const { slipClip } = await import("./ops");
+    const base = produce(sample(), (d) => {
+      d.tracks[0].clips = [{ id: "v", start: "00:00:02:00", end: "00:00:04:00", ref: "assets/a.mp4", offset: "00:00:01:00" }];
+    });
+    const ref = { trackId: base.tracks[0].id, clipId: "v" };
+    const at = (offset: number, max?: number) => produce(base, (d) => slipClip(d, ref, offset, max)).tracks[0].clips[0];
+    expect(at(45)).toMatchObject({ start: "00:00:02:00", end: "00:00:04:00", offset: "00:00:01:15" });
+    expect(at(-10).offset).toBeUndefined(); // never before the start of the source
+    expect(at(500, 90).offset).toBe("00:00:03:00"); // a 5 s source: a 2 s clip can start at 3 s at most
+  });
+
+  it("duplicates a clip next to the original", async () => {
+    const { duplicateClip, moveClip } = await import("./ops");
+    const p = produce(sample(), (d) => {
+      d.tracks[0].clips = [{ id: "a", start: "00:00:00:00", end: "00:00:02:00", desc: "A" }];
+      const id = duplicateClip(d, { trackId: d.tracks[0].id, clipId: "a" });
+      moveClip(d, { trackId: d.tracks[0].id, clipId: id }, 30); // dropped on the original: lands right after it
+    });
+    expect(p.tracks[0].clips.map((c) => `${c.desc}:${c.start}-${c.end}`)).toEqual([
+      "A:00:00:00:00-00:00:02:00",
+      "A:00:00:02:00-00:00:04:00",
+    ]);
+    expect(new Set(p.tracks[0].clips.map((c) => c.id)).size).toBe(2);
+  });
+
   it("rejects reserved or duplicate column keys", async () => {
     const { parseProject } = await import("./serialize");
     const track = (fields: object[]) => JSON.stringify({ tracks: [{ id: "v", name: "V", kind: "visual", fields }] });

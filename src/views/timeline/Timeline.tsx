@@ -2,12 +2,24 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assetUrl } from "../../io/backend";
 import { importDrop, isAcceptableDrag, snapshotDrop } from "../../io/dnd";
-import { addClip, type ClipRef, endF, moveClip, moveTrack, projectEndFrame, removeTrack, startF, trimClip } from "../../model/ops";
+import {
+  addClip,
+  type ClipRef,
+  duplicateClip,
+  endF,
+  moveClip,
+  moveTrack,
+  projectEndFrame,
+  removeTrack,
+  slipClip,
+  startF,
+  trimClip,
+} from "../../model/ops";
 import { shownScreens } from "../../model/preview";
 import type { Clip, Track, TrackKind } from "../../model/schema";
 import { formatDuration, framesToTc, tcToFrames } from "../../model/timecode";
 import { clipThumbRef } from "../../render/compositor";
-import { mediaKind } from "../../render/media";
+import { mediaDuration, mediaKind } from "../../render/media";
 import { currentPreset, useStore } from "../../store/store";
 import { addAssetClip, DEFAULT_STILL_SECONDS } from "../actions";
 import { NumberField } from "../NumberField";
@@ -393,7 +405,8 @@ function TrackHeader({ track, index, count }: { track: Track; index: number; cou
 /** Source time of a clip's first frame, nudged in so the frame has decoded content. */
 const thumbSeconds = (clip: Clip, fps: number) => (clip.offset ? tcToFrames(clip.offset, fps) / fps : 0) + 0.05;
 
-type DragMode = "move" | "start" | "end";
+/** move (Alt: move a copy), start / end: trim, slip (Ctrl): change which part of the source plays. */
+type DragMode = "move" | "start" | "end" | "slip";
 
 function snapCandidates(ref: ClipRef): number[] {
   const { project, playhead } = useStore.getState();
@@ -426,12 +439,17 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
   const assetEpoch = useStore((s) => s.assetEpoch);
   // biome-ignore lint/correctness/useExhaustiveDependencies: assetEpoch changes the URL of a file replaced on disk
   const url = useMemo(() => (ref ? assetUrl(dir, ref) : null), [dir, ref, assetEpoch]);
+  const timed = kind === "video" || kind === "audio";
+  /** Source position shown on the clip while slipping. */
+  const [slipLabel, setSlipLabel] = useState<string | null>(null);
 
-  const startDrag = (ev: React.PointerEvent, mode: DragMode) => {
+  const startDrag = (ev: React.PointerEvent, requested: DragMode) => {
     if (ev.button !== 0) return;
     ev.stopPropagation();
+    const mode: DragMode = requested === "move" && ev.ctrlKey && timed ? "slip" : requested;
+    const copy = requested === "move" && ev.altKey;
     const st = useStore.getState();
-    const cref = { trackId: track.id, clipId: clip.id };
+    let cref = { trackId: track.id, clipId: clip.id };
     st.select(cref);
     st.begin();
     const x0 = ev.clientX;
@@ -439,12 +457,27 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
     const cands = snapCandidates(cref);
     const maxDist = SNAP_PX / ppf;
     let moved = false;
+    const offset0 = clip.offset ? tcToFrames(clip.offset, fps) : 0;
+    // Slipping stops at the end of the source once its length is known.
+    let maxOffset: number | undefined;
+    if (mode === "slip" && url && timed)
+      void mediaDuration(url, kind).then((sec) => {
+        if (sec > 0) maxOffset = Math.floor(sec * fps) - dur;
+      });
 
     const move = (pe: PointerEvent) => {
       const df = Math.round((pe.clientX - x0) / ppf);
       if (!moved && Math.abs(pe.clientX - x0) < 3) return;
       moved = true;
-      if (mode === "move") {
+      if (mode === "slip") {
+        // Dragging right reveals earlier source frames (the picture moves with the mouse).
+        useStore.getState().editFromBase((d) => slipClip(d, cref, offset0 - df, maxOffset));
+        const c = useStore
+          .getState()
+          .project?.tracks.find((t) => t.id === track.id)
+          ?.clips.find((x) => x.id === cref.clipId);
+        setSlipLabel(`Source ${c?.offset ?? framesToTc(0, fps)}`);
+      } else if (mode === "move") {
         let ns = s + df;
         const a = nearest(cands, ns, maxDist);
         const b = nearest(cands, ns + dur, maxDist);
@@ -457,7 +490,17 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
           line = b;
         }
         onSnap(line);
-        useStore.getState().editFromBase((d) => moveClip(d, cref, Math.max(0, ns), pe.altKey));
+        if (copy) {
+          // Alt+drag moves a copy; the original stays. The copy's id is the same on every re-apply.
+          let id = "";
+          useStore.getState().editFromBase((d) => {
+            id = duplicateClip(d, { trackId: track.id, clipId: clip.id });
+            moveClip(d, { trackId: track.id, clipId: id }, Math.max(0, ns));
+          });
+          cref = { trackId: track.id, clipId: id };
+        } else {
+          useStore.getState().editFromBase((d) => moveClip(d, cref, Math.max(0, ns)));
+        }
       } else {
         let nf = (mode === "start" ? s : e) + df;
         const snapped = nearest(cands, nf, maxDist);
@@ -475,7 +518,9 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
       window.removeEventListener("pointercancel", up);
       window.removeEventListener("blur", up);
       onSnap(null);
+      setSlipLabel(null);
       useStore.getState().commit();
+      if (copy && moved) useStore.getState().select(cref);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -487,7 +532,8 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
     <div
       className={`clip ${selected ? "selected" : ""}`}
       style={{ left: s * ppf, width: w }}
-      title={`${framesToTc(s, fps)} → ${framesToTc(e, fps)} (${formatDuration(e - s, fps)})`}
+      title={`${framesToTc(s, fps)} → ${framesToTc(e, fps)} (${formatDuration(e - s, fps)})
+Drag to move · Alt+drag to copy${timed ? " · Ctrl+drag to slip (change the part of the source played)" : ""}`}
       onPointerDown={(ev) => startDrag(ev, "move")}
       onDoubleClick={(ev) => {
         ev.stopPropagation();
@@ -500,7 +546,8 @@ function ClipView({ track, clip, fps, ppf, selected, onSnap }: ClipProps) {
         // The first frame the clip plays (its source offset); the media fragment makes the element show it.
         <video className="thumb" src={`${url}#t=${thumbSeconds(clip, fps).toFixed(2)}`} muted preload="metadata" />
       )}
-      {kind === "video" && <div className="clip-label">🎞</div>}
+      {kind === "video" && !slipLabel && <div className="clip-label">🎞</div>}
+      {slipLabel && <div className="clip-label slip-label">{slipLabel}</div>}
       <div className="edge l" onPointerDown={(ev) => startDrag(ev, "start")} />
       <div className="edge r" onPointerDown={(ev) => startDrag(ev, "end")} />
     </div>

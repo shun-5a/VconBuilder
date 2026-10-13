@@ -438,9 +438,15 @@ textarea:focus {
   z-index: 1;
   text-shadow: 0 1px 2px #000;
 }
-.clip .clip-id {
-  color: var(--dim);
-  margin-right: 4px;
+.clip .slip-label {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 .clip canvas.wave {
   position: absolute;
