@@ -1,6 +1,6 @@
 import type { Dialog } from "../App";
-import { projectFile, revealPath } from "../io/backend";
-import { getRecentProjects } from "../io/project";
+import { revealPath } from "../io/backend";
+import { currentProjectFile, getRecentProjects, projectLabel } from "../io/project";
 import { exportCsv, exportMarkdown } from "../io/textio";
 import { useStore } from "../store/store";
 import { Menu, type MenuItem } from "./Menu";
@@ -22,7 +22,7 @@ export function Toolbar({ onDialog }: { onDialog: (d: Dialog) => void }) {
   const tracks = useStore((s) => s.project!.tracks);
   const { undo, redo, set } = useStore.getState();
   const fail = (e: unknown) => set({ notice: `Failed: ${e}` });
-  const recents = getRecentProjects().filter((d) => d !== dir);
+  const recents = getRecentProjects().filter((d) => d !== dir && d !== currentProjectFile());
 
   const fileItems: MenuItem[] = [
     { label: "New", shortcut: "Ctrl+N", onClick: () => void newProject() },
@@ -30,7 +30,7 @@ export function Toolbar({ onDialog }: { onDialog: (d: Dialog) => void }) {
     ...(recents.length
       ? ([
           { heading: "Open recent" },
-          ...recents.slice(0, 6).map((d) => ({ label: folderName(d), title: d, onClick: () => void openProject(d) })),
+          ...recents.slice(0, 6).map((d) => ({ label: projectLabel(d), title: d, onClick: () => void openProject(d) })),
         ] as MenuItem[])
       : []),
     "separator",
@@ -53,7 +53,7 @@ export function Toolbar({ onDialog }: { onDialog: (d: Dialog) => void }) {
     ...tracks.map((t) => ({ label: `Export CSV: ${t.name}`, onClick: () => void exportCsv(t.id).catch(fail) })),
     ...(untitled
       ? []
-      : (["separator", { label: "Show project folder", onClick: () => void projectFile(dir).then(revealPath), title: dir }] as MenuItem[])),
+      : (["separator", { label: "Show project folder", onClick: () => void revealPath(currentProjectFile()), title: dir }] as MenuItem[])),
   ];
 
   const editItems: MenuItem[] = [

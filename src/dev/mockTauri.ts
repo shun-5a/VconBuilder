@@ -70,7 +70,7 @@ function handle(cmd: string, a: Record<string, any> = {}): unknown {
       return null;
     case "project_file":
       return projectFileIn(a.dir);
-    case "take_open_dir":
+    case "take_open_path":
       return null;
     case "list_assets": {
       const prefix = norm(`${a.dir}/assets/`);

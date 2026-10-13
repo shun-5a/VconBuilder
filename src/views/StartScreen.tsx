@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getRecentProjects, openStartupProject } from "../io/project";
+import { getRecentProjects, openStartupProject, projectLabel } from "../io/project";
 import { newProject, openProject } from "./projectActions";
 
 /** Started once per app launch (guards against StrictMode's double effects). */
@@ -40,7 +40,7 @@ export function StartScreen() {
                 <div className="recent">
                   {recents.map((d) => (
                     <button key={d} className="ghost" title={d} onClick={() => void openProject(d)}>
-                      {d}
+                      {projectLabel(d)}
                     </button>
                   ))}
                 </div>
