@@ -23,7 +23,7 @@ import {
   readText,
   removeFile,
   stopWatchingDir,
-  takeOpenDir,
+  takeOpenPath,
   writeTextAtomic,
 } from "./backend";
 
@@ -79,12 +79,38 @@ async function writeAgentGuides(dir: string) {
   if ((await fileExists(claudePath)) && isGeneratedClaudeMd(await readText(claudePath))) await removeFile(claudePath);
 }
 
-/** Opens `dir`; creates a new project there when it has no project file yet. */
-export async function openOrCreateProject(dir: string): Promise<void> {
+const isProjectFilePath = (path: string) => /\.vcb$/i.test(path);
+const parentDir = (path: string) => path.replace(/[\\/][^\\/]*$/, "");
+
+/** Display name of a project path (a .vcb file or a folder). */
+export const projectLabel = (path: string) =>
+  (
+    path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? path
+  ).replace(/\.vcb$/i, "");
+
+/** The open project file (`<folder>/<name>.vcb`). */
+export const currentProjectFile = () => filePath;
+
+/** Opens a .vcb file as it is (its folder is the project), or a project folder. */
+export function openProjectPath(path: string): Promise<void> {
+  return isProjectFilePath(path) ? openOrCreateProject(parentDir(path), path) : openOrCreateProject(path);
+}
+
+/**
+ * Opens a project. With `file` (picked in File ▸ Open, double-clicked, a recent project) exactly that file is
+ * opened and it must exist. With only `dir`, the folder's project file is used, and a new project is created
+ * there when the folder has none yet (new untitled projects, Save to folder).
+ */
+export async function openOrCreateProject(dir: string, file?: string): Promise<void> {
   const untitled = await isUntitledDir(dir);
-  const projectPath = await projectFile(dir);
+  const projectPath = file ?? (await projectFile(dir));
+  const exists = await fileExists(projectPath);
+  if (file && !exists) throw new Error(`${file} does not exist (moved or deleted?)`);
   await ensureProjectDirs(dir);
-  if (!(await fileExists(projectPath))) {
+  if (!exists) {
     const text = serializeProject(emptyProject());
     await writeTextAtomic(projectPath, text);
   }
@@ -107,7 +133,7 @@ export async function openOrCreateProject(dir: string): Promise<void> {
       applyAssetChanges();
     }),
   ];
-  if (!untitled) pushRecent(dir);
+  if (!untitled) pushRecent(projectPath);
 }
 
 export function stopWatching() {
@@ -277,9 +303,9 @@ export async function newUntitledProject() {
  * app did not close normally (closing asks to save or deletes it), so recover it; else start a new project.
  */
 export async function openStartupProject() {
-  const requested = await takeOpenDir();
+  const requested = await takeOpenPath();
   if (requested) {
-    await openOrCreateProject(requested);
+    await openProjectPath(requested);
     return;
   }
   const [latest] = await listUntitled();
@@ -326,13 +352,13 @@ export async function saveProjectTo(target: string) {
   if (!dir) return;
   if (!untitled) {
     await saveNow();
-    await copyProject(dir, target);
+    await copyProject(dir, target, filePath);
     useStore.setState({ notice: `Saved a copy to ${target}` });
     return;
   }
   await leaveCurrent();
   try {
-    await copyProject(dir, target);
+    await copyProject(dir, target, filePath);
   } catch (e) {
     await openOrCreateProject(dir); // keep working where we were
     throw e;

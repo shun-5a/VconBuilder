@@ -1,17 +1,35 @@
 /** Editing commands shared by the table, timeline and keyboard shortcuts. */
 
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { assetUrl, renameAssetFile } from "../io/backend";
 import { refreshAssets } from "../io/project";
 import { renameAssetInGroups } from "../model/assetGroups";
-import { addClip, clipAt, endF, getClip, removeClip, renameMediaRefs, splitClip, trimClip } from "../model/ops";
+import { addClip, clipAt, endF, getClip, removeClip, removeTrack, renameMediaRefs, splitClip, trimClip } from "../model/ops";
 import type { Track, TrackKind } from "../model/schema";
 import { mediaDuration, mediaKind } from "../render/media";
 import { useStore } from "../store/store";
 
 export const DEFAULT_STILL_SECONDS = 3;
 
+/** Deletes a track after confirming (timeline header and Conte track tabs). */
+export async function deleteTrackWithConfirm(track: Track) {
+  const ok = await confirm(`Delete track "${track.name}" and its ${track.clips.length} clips?`, { title: "Delete track", kind: "warning" });
+  if (ok) useStore.getState().edit((d) => removeTrack(d, track.id));
+}
+
+/** Renames a track (empty names are ignored). */
+export function renameTrack(trackId: string, name: string) {
+  const v = name.trim();
+  if (!v) return;
+  useStore.getState().edit((d) => {
+    const t = d.tracks.find((x) => x.id === trackId);
+    if (t && t.name !== v) t.name = v;
+  });
+}
+
 export function acceptsMedia(kind: TrackKind, rel: string): boolean {
   const m = mediaKind(rel);
+  if (kind === "text") return false;
   return kind === "audio" ? m === "audio" : m === "image" || m === "video";
 }
 

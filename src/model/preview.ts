@@ -11,6 +11,10 @@
 import type { ExportPreset, PresetColumns, Project, Track } from "./schema";
 
 const visualTracks = (p: Project) => p.tracks.filter((t) => t.kind === "visual");
+const textTracks = (p: Project) => p.tracks.filter((t) => t.kind === "text");
+
+/** Key of the track's required first column (Reference on visual / audio tracks, Text on text tracks). */
+export const requiredKey = (t: Track): string | null => t.fields[0]?.key ?? null;
 
 /** Key of the track's required first column (Reference): the picture / audio file of each row. */
 export const mainKey = (t: Track): string | null => (t.fields[0]?.type === "media" ? t.fields[0].key : null);
@@ -30,6 +34,7 @@ export function defaultPreset(p: Project, id: string, name: string): ExportPrese
     audio: { enabled: true, bitrate: 192_000 },
     layout: tracks.length > 1 ? "grid" : "single",
     screens: tracks.map((t) => t.id),
+    overlays: textTracks(p).map((t) => t.id),
     columns: Object.fromEntries(tracks.map((t) => [t.id, defaultColumns(t)])),
     insetStyle: { position: "bottom-right", size: 20 },
     captionStyle: { position: "bottom", size: 4 },
@@ -63,8 +68,10 @@ export function ensurePreset(p: Project) {
 export function syncPresets(p: Project) {
   const visual = visualTracks(p);
   const ids = new Set(visual.map((t) => t.id));
+  const text = textTracks(p);
   for (const preset of p.exportPresets) {
     preset.screens = visual.filter((t) => preset.screens.includes(t.id)).map((t) => t.id);
+    preset.overlays = text.filter((t) => preset.overlays.includes(t.id)).map((t) => t.id);
     preset.layout = preset.screens.length > 1 ? "grid" : "single";
     for (const key of Object.keys(preset.columns)) if (!ids.has(key)) delete preset.columns[key];
     for (const t of visual) {
@@ -84,6 +91,10 @@ export function syncPresets(p: Project) {
 /** Shows a new visual track in every preset (as adding a layer does). */
 export function showTrackInAllPresets(p: Project, t: Track) {
   for (const preset of p.exportPresets) {
+    if (t.kind === "text") {
+      if (!preset.overlays.includes(t.id)) preset.overlays.push(t.id);
+      continue;
+    }
     if (!preset.screens.includes(t.id)) preset.screens.push(t.id);
     preset.columns[t.id] ??= defaultColumns(t);
   }
@@ -98,7 +109,25 @@ export function shownScreens(p: Project, preset: ExportPreset): string[] {
 }
 
 /** Toggles one track on/off in a preset (mutates it); the layout follows the count. */
+/** Text tracks drawn over the frame, in track order. */
+export function shownOverlays(p: Project, preset: ExportPreset): Track[] {
+  return textTracks(p).filter((t) => preset.overlays.includes(t.id));
+}
+
+/** Whether a visual or text track is shown in a preset. */
+export const isShownIn = (preset: ExportPreset | undefined, t: Track): boolean =>
+  !!preset && (t.kind === "text" ? preset.overlays.includes(t.id) : preset.screens.includes(t.id));
+
+/** Toggles one track on/off in a preset (mutates it); the layout follows the number of screens. */
 export function toggleScreen(p: Project, preset: ExportPreset, trackId: string) {
+  if (p.tracks.find((t) => t.id === trackId)?.kind === "text") {
+    const on = preset.overlays.includes(trackId);
+    const next = on ? preset.overlays.filter((id) => id !== trackId) : [...preset.overlays, trackId];
+    preset.overlays = textTracks(p)
+      .filter((t) => next.includes(t.id))
+      .map((t) => t.id);
+    return;
+  }
   const cur = shownScreens(p, preset);
   const next = cur.includes(trackId) ? cur.filter((id) => id !== trackId) : [...cur, trackId];
   preset.screens = p.tracks.filter((t) => next.includes(t.id)).map((t) => t.id);

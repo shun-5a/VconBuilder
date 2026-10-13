@@ -12,10 +12,13 @@ export const fileExists = (path: string) => invoke<boolean>("file_exists", { pat
 export const writeTextAtomic = (path: string, text: string) => invoke<void>("write_text_atomic", { path, text });
 export const ensureProjectDirs = (dir: string) => invoke<void>("ensure_project_dirs", { dir });
 export const openProjectDir = (dir: string) => invoke<void>("open_project", { dir });
-/** Path of the folder's project file (`<folder name>.vcb`, or the only .vcb in it). */
+/**
+ * Path of the folder's project file (`<folder name>.vcb`, or the only .vcb in it; the name for a new one when
+ * there is none). Fails when the folder holds several .vcb files and none is named after it.
+ */
 export const projectFile = (dir: string) => invoke<string>("project_file", { dir });
-/** Folder this window was launched to open (a double-clicked .vcb), if any. */
-export const takeOpenDir = () => invoke<string | null>("take_open_dir");
+/** What this window was launched to open (a double-clicked .vcb file, or a folder), if anything. */
+export const takeOpenPath = () => invoke<string | null>("take_open_path");
 export const listAssets = (dir: string) => invoke<string[]>("list_assets", { dir });
 export const reserveAsset = (dir: string, name: string) => invoke<string>("reserve_asset", { dir, name });
 export const renameAssetFile = (dir: string, rel: string, newName: string) => invoke<string>("rename_asset", { dir, rel, newName });
@@ -86,4 +89,5 @@ export const createUntitledDir = () => invoke<string>("create_untitled_dir");
 export const isUntitledDir = (dir: string) => invoke<boolean>("is_untitled_dir", { dir });
 export const discardUntitled = (dir: string) => invoke<void>("discard_untitled", { dir });
 export const stopWatchingDir = () => invoke<void>("stop_watching");
-export const copyProject = (from: string, to: string) => invoke<void>("copy_project", { from, to });
+/** Copies a project folder; `file` is the open project file, renamed after the new folder. */
+export const copyProject = (from: string, to: string, file?: string) => invoke<void>("copy_project", { from, to, file });

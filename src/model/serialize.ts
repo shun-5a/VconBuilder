@@ -76,7 +76,7 @@ function migrate(json: unknown): unknown {
   const tracks = Array.isArray(doc.tracks) ? doc.tracks.filter((t) => t && typeof t === "object") : [];
   for (const t of tracks) if (t.kind === "cue") t.kind = "visual";
   const fieldsOf = (t: RawTrack) => (Array.isArray(t.fields) ? t.fields.filter((f) => f && typeof f === "object") : []);
-  const visual = tracks.filter((t) => t.kind !== "audio");
+  const visual = tracks.filter((t) => t.kind !== "audio" && t.kind !== "text");
   for (const t of tracks) {
     delete t.solo;
     // Default audio column was labelled "Source" before it matched the visual tracks' "Reference".

@@ -39,12 +39,14 @@ export const Clip = z
   .catchall(CellValue)
   .describe("One cut / cue / row. Field values are stored as extra properties keyed by field.key");
 
-export const TrackKind = z.enum(["visual", "audio"]);
+export const TrackKind = z.enum(["visual", "audio", "text"]);
 
 export const Track = z.object({
   id: Id,
   name: z.string(),
-  kind: TrackKind.describe("visual: images and videos (picture, lighting references, ...) / audio: audio files only"),
+  kind: TrackKind.describe(
+    "visual: images and videos (picture, lighting references, ...) / audio: audio files only / text: text drawn over the whole frame",
+  ),
   fields: z
     .array(Field)
     .default([])
@@ -103,6 +105,7 @@ export const ExportPreset = z.object({
     .default({ enabled: true, bitrate: 192_000 }),
   layout: z.enum(["single", "grid"]).default("single").describe("grid: show several screens side by side"),
   screens: z.array(z.string()).default([]).describe("Visual track ids drawn as screens, in track order"),
+  overlays: z.array(z.string()).default([]).describe("Text track ids drawn over the whole frame, in track order"),
   columns: z
     .record(z.string(), PresetColumns)
     .default({})
