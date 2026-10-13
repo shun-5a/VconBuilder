@@ -53,7 +53,7 @@ export function projectToMarkdown(p: Project, title = "Sequence"): string {
   const { fps, width, height } = p.settings;
   const parts = [`# ${title}`, "", `${width}×${height} / ${fps} fps`, ""];
   for (const t of p.tracks) parts.push(`## ${t.name} (${t.kind})`, "", trackToMarkdown(p, t), "");
-  const picture = p.tracks.filter((t) => t.kind !== "audio").map((t) => t.id);
+  const picture = p.tracks.filter((t) => t.kind !== "audio").map((t) => t.id); // visual and text tracks
   if (picture.length > 1) parts.push("## Combined", "", mergedToMarkdown(p, picture), "");
   return parts.join("\n");
 }

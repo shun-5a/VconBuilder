@@ -175,6 +175,42 @@ describe("ops", () => {
     expect(new Set(p.tracks[0].clips.map((c) => c.id)).size).toBe(2);
   });
 
+  it("adds text tracks with a required Text column, shown through preset overlays", async () => {
+    const { addTrack, addField, removeField, removeTrack } = await import("./ops");
+    const { toggleScreen, shownOverlays } = await import("./preview");
+    let id = "";
+    let p = produce(sample(), (d) => {
+      id = addTrack(d, "text", "Narration");
+    });
+    const t = () => p.tracks.find((x) => x.id === id)!;
+    expect(t().fields[0]).toEqual({ key: "text", label: "Text", type: "text" });
+    for (const preset of p.exportPresets) expect(preset.overlays).toContain(id);
+    p = produce(p, (d) => {
+      const key = addField(d, id, "media");
+      expect(d.tracks.find((x) => x.id === id)!.fields.find((f) => f.key === key)?.type).toBe("text");
+      removeField(d, id, "text"); // required: stays
+      toggleScreen(d, d.exportPresets[0], id);
+    });
+    expect(t().fields[0].key).toBe("text");
+    expect(shownOverlays(p, p.exportPresets[0])).toEqual([]);
+    expect(shownOverlays(p, p.exportPresets[1]).map((x) => x.id)).toEqual([id]);
+    p = produce(p, (d) => removeTrack(d, id));
+    for (const preset of p.exportPresets) expect(preset.overlays).toEqual([]);
+  });
+
+  it("reads text tracks and presets without overlays", async () => {
+    const { parseProject } = await import("./serialize");
+    const r = parseProject(
+      JSON.stringify({
+        tracks: [{ id: "t", name: "T", kind: "text", fields: [{ key: "note", label: "Notes" }] }],
+        exportPresets: [{ id: "p", name: "P" }],
+      }),
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(r.project.tracks[0].fields[0].key).toBe("note"); // the first text column becomes the Text column
+    expect(r.project.exportPresets[0].overlays).toEqual([]);
+  });
+
   it("rejects reserved or duplicate column keys", async () => {
     const { parseProject } = await import("./serialize");
     const track = (fields: object[]) => JSON.stringify({ tracks: [{ id: "v", name: "V", kind: "visual", fields }] });

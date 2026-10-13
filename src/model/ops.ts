@@ -4,7 +4,7 @@
  */
 
 import { syncAssetGroups } from "./assetGroups";
-import { ensurePreset, mainKey, showTrackInAllPresets, syncPresets } from "./preview";
+import { ensurePreset, requiredKey, showTrackInAllPresets, syncPresets } from "./preview";
 import type { Clip, Field, FieldType, Project, Track, TrackKind } from "./schema";
 import { framesToTc, tcToFrames } from "./timecode";
 
@@ -73,15 +73,20 @@ function uniqueId(base: string, taken: Set<string>): string {
 // ---------------------------------------------------------------- tracks & fields
 
 /** Starting columns of a new track (the media column holds images / videos or audio files). */
-export function defaultFields(_kind: TrackKind): Field[] {
+export function defaultFields(kind: TrackKind): Field[] {
+  if (kind === "text")
+    return [
+      { key: "text", label: "Text", type: "text" },
+      { key: "note", label: "Notes", type: "text" },
+    ];
   return [
     { key: "ref", label: "Reference", type: "media" },
     { key: "note", label: "Notes", type: "text" },
   ];
 }
 
-const KIND_ID: Record<TrackKind, string> = { visual: "visual", audio: "audio" };
-const KIND_NAME: Record<TrackKind, string> = { visual: "Visual", audio: "Audio" };
+const KIND_ID: Record<TrackKind, string> = { visual: "visual", audio: "audio", text: "text" };
+const KIND_NAME: Record<TrackKind, string> = { visual: "Visual", audio: "Audio", text: "Text" };
 
 /** Next free default name such as "Video 2". */
 export function defaultTrackName(p: Project, kind: TrackKind): string {
@@ -105,7 +110,7 @@ export function addTrack(p: Project, kind: TrackKind, name?: string): string {
   const id = uniqueId((given && slugify(given)) || KIND_ID[kind], new Set(p.tracks.map((t) => t.id)));
   const track: Track = { id, name: given || defaultTrackName(p, kind), kind, fields: defaultFields(kind), clips: [] };
   p.tracks.push(track);
-  if (kind === "visual") showTrackInAllPresets(p, track);
+  if (kind !== "audio") showTrackInAllPresets(p, track);
   return id;
 }
 
@@ -125,7 +130,7 @@ export function moveTrack(p: Project, trackId: string, delta: number) {
 /** Adds a column; audio tracks only get text columns (their one media column is the audio file). */
 export function addField(p: Project, trackId: string, type: FieldType, label?: string): string {
   const t = getTrack(p, trackId);
-  if (t.kind === "audio") type = "text";
+  if (t.kind !== "visual") type = "text";
   const key = uniqueId(type === "media" ? "media" : "text", new Set(t.fields.map((f) => f.key)));
   t.fields.push({ key, label: label ?? (type === "media" ? "Media" : "Text"), type });
   return key;
@@ -134,7 +139,7 @@ export function addField(p: Project, trackId: string, type: FieldType, label?: s
 /** Removes a column (the required Reference column stays). */
 export function removeField(p: Project, trackId: string, key: string) {
   const t = getTrack(p, trackId);
-  if (key === mainKey(t)) return;
+  if (key === requiredKey(t)) return;
   t.fields = t.fields.filter((f) => f.key !== key);
   for (const c of t.clips) delete c[key];
   syncPresets(p);
@@ -145,7 +150,7 @@ export function moveField(p: Project, trackId: string, key: string, delta: numbe
   const t = getTrack(p, trackId);
   const i = t.fields.findIndex((f) => f.key === key);
   const j = i + delta;
-  const first = mainKey(t) ? 1 : 0;
+  const first = requiredKey(t) ? 1 : 0;
   if (i < first || j < first || j >= t.fields.length) return;
   const [f] = t.fields.splice(i, 1);
   t.fields.splice(j, 0, f);
@@ -156,10 +161,13 @@ export function moveField(p: Project, trackId: string, key: string, delta: numbe
  * or a new one is added when the track has none.
  */
 export function ensureMainColumn(t: Track) {
-  if (t.fields[0]?.type === "media") return;
-  const i = t.fields.findIndex((f) => f.type === "media");
+  // Visual / audio tracks start with their media (Reference); text tracks with the text that is drawn.
+  const type = t.kind === "text" ? "text" : "media";
+  if (t.fields[0]?.type === type) return;
+  const i = t.fields.findIndex((f) => f.type === type);
   if (i >= 0) t.fields.unshift(...t.fields.splice(i, 1));
-  else t.fields.unshift({ key: uniqueId("ref", new Set(t.fields.map((f) => f.key))), label: "Reference", type: "media" });
+  else if (type === "text") t.fields.unshift({ key: uniqueId("text", new Set(t.fields.map((f) => f.key))), label: "Text", type });
+  else t.fields.unshift({ key: uniqueId("ref", new Set(t.fields.map((f) => f.key))), label: "Reference", type });
 }
 
 // ---------------------------------------------------------------- clips

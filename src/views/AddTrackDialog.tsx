@@ -6,6 +6,7 @@ import { useStore } from "../store/store";
 const KINDS: { kind: TrackKind; title: string }[] = [
   { kind: "visual", title: "Visual track" },
   { kind: "audio", title: "Audio track" },
+  { kind: "text", title: "Text track" },
 ];
 
 /** Picks the kind of a new track and its name. */

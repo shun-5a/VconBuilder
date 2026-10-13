@@ -4,7 +4,7 @@
  */
 
 import { clipAt, startF } from "../model/ops";
-import { captionKeys, defaultPreset, insetKeys, mainKey, shownScreens } from "../model/preview";
+import { captionKeys, defaultPreset, insetKeys, mainKey, requiredKey, shownOverlays, shownScreens } from "../model/preview";
 import type { Clip, ExportPreset, InsetPosition, Project, Track } from "../model/schema";
 import { framesToTc, tcToFrames } from "../model/timecode";
 import { mediaKind } from "./media";
@@ -157,33 +157,60 @@ export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
   return lines;
 }
 
-function drawTextBlock(
+type TextPosition = "top" | "center" | "bottom";
+
+/** A laid-out caption / text band: its background box (x, y, w, h) in frame pixels and its lines. */
+type TextBlock = Rect & { lines: string[]; fontPx: number; cx: number };
+
+/** Lays out `text` in a band of `r` (wrapped to 90% of its width), `stackOffset` px away from the edge. */
+function layoutTextBlock(
   ctx: CanvasRenderingContext2D,
   text: string,
   r: Rect,
-  position: "top" | "center" | "bottom",
+  position: TextPosition,
   fontPx: number,
   stackOffset: number,
-): number {
+): TextBlock {
   ctx.font = `600 ${fontPx}px ${FONT_FAMILY}`;
   const lines = wrapText(ctx, text, r.w * 0.9);
-  const lh = fontPx * 1.35;
   const padX = fontPx * 0.5;
-  const padY = fontPx * 0.25;
-  const blockH = lines.length * lh + padY * 2;
+  const h = lines.length * fontPx * 1.35 + fontPx * 0.5;
   const margin = r.h * 0.05;
   let y: number;
   if (position === "top") y = r.y + margin + stackOffset;
-  else if (position === "center") y = r.y + (r.h - blockH) / 2 + stackOffset;
-  else y = r.y + r.h - margin - blockH - stackOffset;
-  const maxW = Math.max(...lines.map((l) => ctx.measureText(l).width));
+  else if (position === "center") y = r.y + (r.h - h) / 2 + stackOffset;
+  else y = r.y + r.h - margin - h - stackOffset;
+  const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
+  return { x: r.x + (r.w - w) / 2, y, w, h, lines, fontPx, cx: r.x + r.w / 2 };
+}
+
+function paintTextBlock(ctx: CanvasRenderingContext2D, b: TextBlock) {
+  ctx.font = `600 ${b.fontPx}px ${FONT_FAMILY}`;
   ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(r.x + (r.w - maxW) / 2 - padX, y, maxW + padX * 2, blockH);
+  ctx.fillRect(b.x, b.y, b.w, b.h);
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  for (const [i, l] of lines.entries()) ctx.fillText(l, r.x + r.w / 2, y + padY + i * lh + fontPx * 0.12);
-  return blockH + fontPx * 0.3;
+  const lh = b.fontPx * 1.35;
+  for (const [i, l] of b.lines.entries()) ctx.fillText(l, b.cx, b.y + b.fontPx * 0.25 + i * lh + b.fontPx * 0.12);
+}
+
+const overlaps = (a: Rect, b: Rect, gap: number) =>
+  a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+/**
+ * Moves a text-track band off the captions (and earlier bands) it would cover: bottom / center bands move up,
+ * top bands move down. If that would push it out of the frame it stays where it was (overlapping beats invisible).
+ */
+function avoidBlocks(b: TextBlock, position: TextPosition, obstacles: Rect[], frameH: number, gap: number): TextBlock {
+  const placed = { ...b };
+  for (let i = 0; i < obstacles.length + 1; i++) {
+    const hit = obstacles.find((o) => overlaps(placed, o, gap));
+    if (!hit) return placed;
+    placed.y = position === "top" ? hit.y + hit.h + gap : hit.y - placed.h - gap;
+    if (placed.y < 0 || placed.y + placed.h > frameH) return b;
+  }
+  return b;
 }
 
 function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, fontPx: number, align: "left" | "right") {
@@ -265,6 +292,7 @@ export function renderFrame(
   });
 
   // Captions: the preset's caption columns of each track on screen, stacked inside that screen in column order.
+  const captionBoxes: Rect[] = [];
   const { position, size } = preset.captionStyle;
   for (const track of shown) {
     const clip = clipAt(track, frame, fps);
@@ -276,8 +304,29 @@ export function renderFrame(
     const r = rectOf.get(track.id)!;
     // Bottom captions are stacked upwards, so draw the last column first to keep reading order top-down.
     let off = 0;
-    for (const text of position === "bottom" ? texts.reverse() : texts)
-      off += drawTextBlock(ctx, text, r, position, (r.h * size) / 100, off);
+    for (const text of position === "bottom" ? texts.reverse() : texts) {
+      const b = layoutTextBlock(ctx, text, r, position, (r.h * size) / 100, off);
+      paintTextBlock(ctx, b);
+      captionBoxes.push(b);
+      off += b.h + b.fontPx * 0.3;
+    }
+  }
+
+  // Text tracks: over the whole frame (across all screens), placed where they do not cover the captions.
+  const stack = { top: 0, center: 0, bottom: 0 };
+  const obstacles: Rect[] = [...captionBoxes];
+  for (const track of shownOverlays(project, preset)) {
+    const clip = clipAt(track, frame, fps);
+    const key = requiredKey(track);
+    const v = clip && key ? clip[key] : null;
+    if (v === undefined || v === null || v === "") continue;
+    const style = { position: "bottom" as const, size: 5, ...track.textStyle };
+    const fontPx = (H * style.size) / 100;
+    const laid = layoutTextBlock(ctx, String(v), { x: 0, y: 0, w: W, h: H }, style.position, fontPx, stack[style.position]);
+    const b = avoidBlocks(laid, style.position, obstacles, H, fontPx * 0.3);
+    paintTextBlock(ctx, b);
+    obstacles.push(b);
+    stack[style.position] += b.h + fontPx * 0.3;
   }
 
   if (preset.burnTimecode) {

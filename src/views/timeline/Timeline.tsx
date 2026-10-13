@@ -15,20 +15,21 @@ import {
   startF,
   trimClip,
 } from "../../model/ops";
-import { shownScreens } from "../../model/preview";
-import type { Clip, Track, TrackKind } from "../../model/schema";
+import { isShownIn, requiredKey, shownScreens } from "../../model/preview";
+import type { Clip, TextStyle, Track, TrackKind } from "../../model/schema";
 import { formatDuration, framesToTc, tcToFrames } from "../../model/timecode";
 import { clipThumbRef } from "../../render/compositor";
 import { mediaDuration, mediaKind } from "../../render/media";
 import { currentPreset, useStore } from "../../store/store";
 import { addAssetClip, DEFAULT_STILL_SECONDS } from "../actions";
 import { NumberField } from "../NumberField";
+import { Popover } from "../Popover";
 import { seek } from "../preview/player";
 import { toggleTrackOnScreen } from "../preview/presets";
 import { Waveform } from "./Waveform";
 
 const HEAD_W = 176;
-const TRACK_H: Record<TrackKind, number> = { visual: 58, audio: 54 };
+const TRACK_H: Record<TrackKind, number> = { visual: 58, audio: 54, text: 40 };
 const SNAP_PX = 8;
 const MIN_PPF = 0.02;
 const MAX_PPF = 40;
@@ -306,10 +307,47 @@ function TrackRow({ track, index, count, fps, ppf, laneW, onSnap }: RowProps) {
   );
 }
 
+const DEFAULT_TEXT_STYLE: TextStyle = { position: "bottom", size: 5 };
+
+/** "Aa" in a text track's header: where its text sits over the frame and how big it is. */
+function TextStyleButton({ track }: { track: Track }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const style = { ...DEFAULT_TEXT_STYLE, ...track.textStyle };
+  const set = (next: Partial<TextStyle>) =>
+    useStore.getState().edit((d) => {
+      const t = d.tracks.find((x) => x.id === track.id);
+      if (t) t.textStyle = { ...style, ...next };
+    });
+  return (
+    <>
+      <button ref={ref} className={`ghost ${open ? "on" : ""}`} onClick={() => setOpen(!open)} title="Text position and size">
+        Aa
+      </button>
+      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} className="text-style-pop">
+        <div className="row">
+          <span className="dim small">Position</span>
+          <select value={style.position} onChange={(e) => set({ position: e.target.value as TextStyle["position"] })}>
+            <option value="bottom">Bottom</option>
+            <option value="center">Center</option>
+            <option value="top">Top</option>
+          </select>
+        </div>
+        <div className="row">
+          <span className="dim small">Size</span>
+          <NumberField min={1} max={50} step={0.5} width={60} value={style.size} onCommit={(size) => set({ size })} />
+          <span className="dim small">% of frame height</span>
+        </div>
+        <div className="dim small">Moves away from the captions of the screens when they would overlap.</div>
+      </Popover>
+    </>
+  );
+}
+
 function TrackHeader({ track, index, count }: { track: Track; index: number; count: number }) {
   const [editing, setEditing] = useState(false);
   const edit = useStore((s) => s.edit);
-  const onScreen = useStore((s) => shownScreens(s.project!, currentPreset(s)!).includes(track.id));
+  const onScreen = useStore((s) => isShownIn(currentPreset(s), track));
   const patch = (fn: (t: Track) => void) =>
     edit((d) => {
       const t = d.tracks.find((x) => x.id === track.id);
@@ -384,13 +422,16 @@ function TrackHeader({ track, index, count }: { track: Track; index: number; cou
             />
           </>
         ) : (
-          <button
-            className={`show-toggle ${onScreen ? "on" : ""}`}
-            onClick={() => toggleTrackOnScreen(track.id)}
-            title={onScreen ? "Shown in preview / export (click to hide)" : "Hidden from preview / export (click to show)"}
-          >
-            {onScreen ? "◉" : "◌"}
-          </button>
+          <>
+            {track.kind === "text" && <TextStyleButton track={track} />}
+            <button
+              className={`show-toggle ${onScreen ? "on" : ""}`}
+              onClick={() => toggleTrackOnScreen(track.id)}
+              title={onScreen ? "Shown in preview / export (click to hide)" : "Hidden from preview / export (click to show)"}
+            >
+              {onScreen ? "◉" : "◌"}
+            </button>
+          </>
         )}
         <button className="ghost" onClick={del} title="Delete track">
           ✕
@@ -547,6 +588,7 @@ Drag to move · Alt+drag to copy${timed ? " · Ctrl+drag to slip (change the par
         <video className="thumb" src={`${url}#t=${thumbSeconds(clip, fps).toFixed(2)}`} muted preload="metadata" />
       )}
       {kind === "video" && !slipLabel && <div className="clip-label">🎞</div>}
+      {track.kind === "text" && <div className="clip-label clip-text">{String(clip[requiredKey(track) ?? ""] ?? "")}</div>}
       {slipLabel && <div className="clip-label slip-label">{slipLabel}</div>}
       <div className="edge l" onPointerDown={(ev) => startDrag(ev, "start")} />
       <div className="edge r" onPointerDown={(ev) => startDrag(ev, "end")} />

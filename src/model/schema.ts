@@ -39,12 +39,20 @@ export const Clip = z
   .catchall(CellValue)
   .describe("One cut / cue / row. Field values are stored as extra properties keyed by field.key");
 
-export const TrackKind = z.enum(["visual", "audio"]);
+export const TrackKind = z.enum(["visual", "audio", "text"]);
+
+/** Look of a text track: drawn over the whole frame (across all screens). */
+export const TextStyle = z.object({
+  position: z.enum(["top", "center", "bottom"]).default("bottom"),
+  size: z.number().positive().max(50).default(5).describe("Font size in % of the frame height"),
+});
 
 export const Track = z.object({
   id: Id,
   name: z.string(),
-  kind: TrackKind.describe("visual: images and videos (picture, lighting references, ...) / audio: audio files only"),
+  kind: TrackKind.describe(
+    "visual: images and videos (picture, lighting references, ...) / audio: audio files only / text: text drawn over the whole frame",
+  ),
   fields: z
     .array(Field)
     .default([])
@@ -53,6 +61,7 @@ export const Track = z.object({
   clips: z.array(Clip).default([]).describe("Clips sorted by start; clips on one track never overlap"),
   mute: z.boolean().optional(),
   volume: z.number().optional().describe("Audio: track volume in dB"),
+  textStyle: TextStyle.optional().describe("Text tracks: position and size (default bottom, 5%)"),
 });
 
 export const Settings = z.object({
@@ -103,6 +112,7 @@ export const ExportPreset = z.object({
     .default({ enabled: true, bitrate: 192_000 }),
   layout: z.enum(["single", "grid"]).default("single").describe("grid: show several screens side by side"),
   screens: z.array(z.string()).default([]).describe("Visual track ids drawn as screens, in track order"),
+  overlays: z.array(z.string()).default([]).describe("Text track ids drawn over the whole frame, in track order"),
   columns: z
     .record(z.string(), PresetColumns)
     .default({})
@@ -130,6 +140,7 @@ export type FieldType = z.infer<typeof FieldType>;
 export type Field = z.infer<typeof Field>;
 export type Clip = z.infer<typeof Clip>;
 export type TrackKind = z.infer<typeof TrackKind>;
+export type TextStyle = z.infer<typeof TextStyle>;
 export type Track = z.infer<typeof Track>;
 export type Settings = z.infer<typeof Settings>;
 export type CaptionStyle = z.infer<typeof CaptionStyle>;

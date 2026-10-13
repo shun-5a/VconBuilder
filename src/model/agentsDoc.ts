@@ -64,11 +64,12 @@ frames = ((HH×60 + MM)×60 + SS)×fps + FF. Example at 30 fps: \`"00:01:02:15"\
 |---|---|---|
 | \`id\` | string \`[A-Za-z0-9_-]+\` | unique; referenced by presets; never rename |
 | \`name\` | string | label shown in the app |
-| \`kind\` | \`"visual"\` \\| \`"audio"\` | visual: images/videos (picture, lighting references, …); audio: audio files only |
+| \`kind\` | \`"visual"\` \\| \`"audio"\` \\| \`"text"\` | visual: images/videos (picture, lighting references, …); audio: audio files only; text: text drawn over the whole frame (titles, narration…) |
 | \`fields\` | array of Field | the track's table columns, in order |
 | \`clips\` | array of Clip | the rows: sorted by \`start\`, never overlapping |
 | \`mute\` | boolean, optional | audio tracks: excluded from preview and export |
 | \`volume\` | number, optional | audio track volume in dB (0 = unchanged) |
+| \`textStyle\` | object, optional | text tracks: \`{ "position": "top" \\| "center" \\| "bottom", "size": 5 }\` (size in % of the frame height; default bottom, 5). The text is drawn across all screens and moves off the screens' captions when it would cover them |
 
 ### Field (a column)
 
@@ -79,9 +80,10 @@ frames = ((HH×60 + MM)×60 + SS)×fps + FF. Example at 30 fps: \`"00:01:02:15"\
 | \`type\` | \`"text"\` \\| \`"media"\` | media values are project-relative paths such as \`"assets/shot01.png"\` |
 | \`width\` | number, optional | column width in px (UI only) |
 
-The first field of every track is required and must be a media column (by default \`{ "key": "ref", "label": "Reference", "type": "media" }\`):
-it holds each row's picture (visual) or audio file (audio), is always shown, and is never moved or removed.
-Audio tracks have only this one media column; their other columns are text.
+The first field of every track is required: on visual and audio tracks a media column (by default \`{ "key": "ref", "label": "Reference", "type": "media" }\`),
+on text tracks a text column (by default \`{ "key": "text", "label": "Text", "type": "text" }\`).
+It holds each row's picture (visual), audio file (audio) or text (text), is always shown, and is never moved or removed.
+Audio and text tracks have no other media columns; their other columns are text.
 Which other columns appear in the video is decided per preset (see \`columns\` below), not on the field.
 
 ### Clip (a row)
@@ -107,6 +109,7 @@ captions and a CG version with colour notes.
 | \`id\` | string | | unique |
 | \`name\` | string | | |
 | \`screens\` | array of track ids | | visual tracks shown, in track order; 1 → full frame, 2+ → grid; \`[]\` shows nothing |
+| \`overlays\` | array of track ids | \`[]\` | text tracks drawn over the whole frame, in track order |
 | \`columns\` | object: track id → \`{ "insets": [keys…], "captions": [keys…] }\` | one entry per visual track | The first (Reference) column is always the picture; rows without one show their first non-caption text as a title card. \`insets\`: other media columns drawn as small pictures in a corner of that track's screen. \`captions\`: text columns burned in as captions, top to bottom |
 | \`layout\` | \`"single"\` \\| \`"grid"\` | | kept in sync with the number of screens |
 | \`width\`, \`height\`, \`fps\` | integers, optional | project settings | output override (H.264 needs even sizes) |
@@ -130,7 +133,7 @@ always stay \`assets/<file>\`.
 2. \`end\` > \`start\`; frame numbers stay below fps.
 3. Every clip property other than \`start/end/offset\` must be a \`key\` of the track's \`fields\` – add the field first.
 4. Media paths are relative to the project folder and should point to files in \`assets/\`.
-5. Keep at least one preset. Every preset has a \`columns\` entry for each visual track; \`insets\` only media keys other than the first column, \`captions\` only text keys; \`screens\` only visual track ids.
+5. Keep at least one preset. Every preset has a \`columns\` entry for each visual track; \`insets\` only media keys other than the first column, \`captions\` only text keys; \`screens\` only visual track ids, \`overlays\` only text track ids.
 6. Track ids are referenced by presets: when adding a visual track, add it to the presets (see recipes); when removing one, remove it from \`screens\` and \`columns\`.
 
 ## Recipes
@@ -145,7 +148,8 @@ Durations below are in frames at \`settings.fps\`; convert with the formula abov
 - **Add a column**: append \`{ "key": "camera", "label": "Camera", "type": "text" }\` to \`fields\`, then set \`"camera"\` on clips.
 - **Show a column as captions in a preset**: add its key to \`columns.<trackId>.captions\` of that preset (remove it to hide).
 - **Show another media column as an inset in a preset**: add its key to \`columns.<trackId>.insets\` (remove it to hide). The first column cannot be an inset: it is always the picture.
-- **Show / hide a track in a preset**: add / remove its id in \`screens\` (keep track order); \`layout\` = \`"single"\` for one screen, otherwise \`"grid"\`.
+- **Show / hide a track in a preset**: add / remove its id in \`screens\` (keep track order); \`layout\` = \`"single"\` for one screen, otherwise \`"grid"\`. For a text track use \`overlays\` instead.
+- **Add a text track**: \`{ "id": "narration", "name": "Narration", "kind": "text", "fields": [{ "key": "text", "label": "Text", "type": "text" }], "clips": [] }\`, then add \`"narration"\` to \`overlays\` of every preset that should show it.
 - **Add a visual track**: \`{ "id": "lighting", "name": "Lighting", "kind": "visual", "fields": [{ "key": "ref", "label": "Reference", "type": "media" }, { "key": "note", "label": "Notes", "type": "text" }], "clips": [] }\`,
   then in every preset add \`"lighting"\` to \`screens\` and \`"lighting": {"insets":[],"captions":[]}\` to \`columns\`.
 - **Add a preset for another version of the video**: copy an existing preset, give it a new \`id\` and \`name\`, and change \`screens\` / \`columns\`.

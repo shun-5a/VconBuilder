@@ -12,6 +12,7 @@ export const DEFAULT_STILL_SECONDS = 3;
 
 export function acceptsMedia(kind: TrackKind, rel: string): boolean {
   const m = mediaKind(rel);
+  if (kind === "text") return false;
   return kind === "audio" ? m === "audio" : m === "image" || m === "video";
 }
 

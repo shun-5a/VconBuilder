@@ -17,6 +17,7 @@
   --danger: #ff5555;
   --visual: #8be9fd;
   --audio: #50fa7b;
+  --text-track: #ffb86c;
   --radius: 6px;
   color-scheme: dark;
   font-family: "Yu Gothic UI", "Meiryo", "Hiragino Sans", system-ui, sans-serif;
@@ -264,6 +265,23 @@ textarea:focus {
 }
 .kind-audio {
   --kind: var(--audio);
+}
+.kind-text {
+  --kind: var(--text-track);
+}
+.clip .clip-text {
+  font-size: 11px;
+  color: var(--text);
+}
+.menu-list.text-style-pop {
+  gap: 6px;
+  padding: 8px;
+  min-width: 240px;
+}
+.text-style-pop .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .dot {
   background: var(--kind, var(--dim));
@@ -985,7 +1003,7 @@ table.grid td.gap {
 }
 .kind-choices {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 .kind-choice {
