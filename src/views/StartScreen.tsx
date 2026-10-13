@@ -32,7 +32,7 @@ export function StartScreen() {
               <button className="primary" onClick={() => void newProject()}>
                 New project
               </button>
-              <button onClick={() => void openProject()}>Open folder…</button>
+              <button onClick={() => void openProject()}>Open…</button>
             </div>
             {recents.length > 0 && (
               <>

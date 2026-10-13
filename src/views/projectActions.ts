@@ -2,7 +2,7 @@
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
-import { fileExists, projectFile } from "../io/backend";
+import { fileExists, PROJECT_EXT, projectFile } from "../io/backend";
 import {
   forgetRecent,
   hasContent,
@@ -58,10 +58,19 @@ export async function newProject() {
   }
 }
 
+/** Opens a project: `dir` (recent projects) or a .vcb file picked in the dialog (its folder is the project). */
 export async function openProject(dir?: string) {
   try {
-    const target = dir ?? (await open({ directory: true, title: "Open a project folder (an empty folder creates a new project)" }));
-    if (typeof target !== "string" || target === useStore.getState().dir) return;
+    let target = dir;
+    if (!target) {
+      const file = await open({
+        title: "Open a project",
+        filters: [{ name: "VconBuilder project", extensions: [PROJECT_EXT] }],
+      });
+      if (typeof file !== "string") return;
+      target = file.replace(/[\\/][^\\/]*$/, "");
+    }
+    if (target === useStore.getState().dir) return;
     // A recent project that was moved or deleted must not be silently recreated as an empty one.
     if (dir && !(await fileExists(await projectFile(dir)))) {
       forgetRecent(dir);

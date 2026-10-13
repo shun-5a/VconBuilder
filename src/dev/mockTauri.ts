@@ -149,7 +149,7 @@ function handle(cmd: string, a: Record<string, any> = {}): unknown {
     case "plugin:dialog|save":
       return "C:/mock/Saved project";
     case "plugin:dialog|open":
-      return "C:/mock/project";
+      return "C:/mock/project/project.vcb";
     case "plugin:dialog|confirm":
     case "plugin:dialog|ask":
       return true;
