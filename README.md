@@ -40,7 +40,7 @@ The window has the preview (top left), the timeline (bottom left) and the right 
 - Alt+[ / Alt+] set the selected clip's IN / OUT to the playhead; Alt+drag on a clip edge also shifts the following clips
 - Alt+drag a clip to place a copy; Ctrl+drag a video / audio clip to slip it (change which part of the source plays, keeping its place and length)
 - Three kinds of tracks: visual (images / videos), audio, and text (text over the whole frame, e.g. titles or narration).
-  Text tracks run across all screens and move off the screens' captions when they would cover them; "Aa" in the track header sets position and size
+  Text tracks run across all screens in the preset's caption style, stacked with the captions so they never cover them
 - ◉ in a track header: visual and text tracks are shown / hidden in the current preset, audio tracks are muted / unmuted
 
 ### Conte tab (the tables)

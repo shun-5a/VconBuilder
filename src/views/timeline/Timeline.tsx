@@ -1,4 +1,3 @@
-import { confirm } from "@tauri-apps/plugin-dialog";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assetUrl } from "../../io/backend";
 import { importDrop, isAcceptableDrag, snapshotDrop } from "../../io/dnd";
@@ -10,26 +9,28 @@ import {
   moveClip,
   moveTrack,
   projectEndFrame,
-  removeTrack,
   slipClip,
   startF,
   trimClip,
 } from "../../model/ops";
 import { isShownIn, requiredKey, shownScreens } from "../../model/preview";
-import type { Clip, TextStyle, Track, TrackKind } from "../../model/schema";
+import type { Clip, Track, TrackKind } from "../../model/schema";
 import { formatDuration, framesToTc, tcToFrames } from "../../model/timecode";
 import { clipThumbRef } from "../../render/compositor";
 import { mediaDuration, mediaKind } from "../../render/media";
 import { currentPreset, useStore } from "../../store/store";
-import { addAssetClip, DEFAULT_STILL_SECONDS } from "../actions";
+import { addAssetClip, DEFAULT_STILL_SECONDS, deleteTrackWithConfirm } from "../actions";
 import { NumberField } from "../NumberField";
-import { Popover } from "../Popover";
 import { seek } from "../preview/player";
 import { toggleTrackOnScreen } from "../preview/presets";
 import { Waveform } from "./Waveform";
 
 const HEAD_W = 176;
-const TRACK_H: Record<TrackKind, number> = { visual: 58, audio: 54, text: 40 };
+const TRACK_H: Record<TrackKind, number> = { visual: 58, audio: 58, text: 58 };
+/** Gap between the track headers and frame 0, so the playhead at the start is not hidden by the header edge. */
+const LANE_PAD = 8;
+/** x of frame 0 inside the scrolling content. */
+const LANE_X = HEAD_W + LANE_PAD;
 const SNAP_PX = 8;
 const MIN_PPF = 0.02;
 const MAX_PPF = 40;
@@ -69,7 +70,7 @@ export function Timeline() {
       e.preventDefault();
       const cur = useStore.getState().pxPerFrame;
       const next = Math.min(MAX_PPF, Math.max(MIN_PPF, cur * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
-      const mx = e.clientX - el.getBoundingClientRect().left - HEAD_W;
+      const mx = e.clientX - el.getBoundingClientRect().left - LANE_X;
       const frameAtMouse = (el.scrollLeft + mx) / cur;
       useStore.setState({ pxPerFrame: next });
       requestAnimationFrame(() => (el.scrollLeft = frameAtMouse * next - mx));
@@ -112,18 +113,18 @@ export function Timeline() {
     const el = scrollRef.current;
     if (!el || !playing) return;
     const x = playhead * ppf;
-    const visibleW = el.clientWidth - HEAD_W;
+    const visibleW = el.clientWidth - LANE_X;
     if (x < el.scrollLeft || x > el.scrollLeft + visibleW - 20) el.scrollLeft = x - 40;
   }, [playhead, playing, ppf]);
 
   const end = projectEndFrame(project);
-  const contentFrames = Math.max(end + 10 * fps, (viewW - HEAD_W) / ppf);
+  const contentFrames = Math.max(end + 10 * fps, (viewW - LANE_X) / ppf);
   const laneW = contentFrames * ppf;
 
   const fit = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const next = Math.min(MAX_PPF, Math.max(MIN_PPF, (el.clientWidth - HEAD_W - 30) / Math.max(end, fps)));
+    const next = Math.min(MAX_PPF, Math.max(MIN_PPF, (el.clientWidth - LANE_X - 30) / Math.max(end, fps)));
     set({ pxPerFrame: next });
     el.scrollLeft = 0;
   };
@@ -151,7 +152,7 @@ export function Timeline() {
           onPointerDown={startPan}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="timeline-content" style={{ width: HEAD_W + laneW }}>
+          <div className="timeline-content" style={{ width: LANE_X + laneW }}>
             <Ruler fps={fps} ppf={ppf} width={laneW} playhead={playhead} />
             {project.tracks.map((t, i) => (
               <TrackRow
@@ -174,8 +175,8 @@ export function Timeline() {
                 </div>
               </div>
             )}
-            <div className="playhead" style={{ left: HEAD_W + playhead * ppf }} />
-            {snapLine !== null && <div className="snapline" style={{ left: HEAD_W + snapLine * ppf }} />}
+            <div className="playhead" style={{ left: LANE_X + playhead * ppf }} />
+            {snapLine !== null && <div className="snapline" style={{ left: LANE_X + snapLine * ppf }} />}
           </div>
         </div>
         {project.tracks.length === 0 && <NoTracks />}
@@ -213,7 +214,7 @@ function Ruler({ fps, ppf, width, playhead }: { fps: number; ppf: number; width:
   return (
     <div className="ruler">
       <div className="ruler-corner" style={{ width: HEAD_W }} />
-      <div className="ruler-lane" onPointerDown={onPointerDown}>
+      <div className="ruler-lane" style={{ marginLeft: LANE_PAD }} onPointerDown={onPointerDown}>
         <div className="ruler-playhead" style={{ left: playhead * ppf }} />
         {ticks.map((f) => (
           <div key={f} className="tick tc" style={{ left: f * ppf }}>
@@ -277,7 +278,7 @@ function TrackRow({ track, index, count, fps, ppf, laneW, onSnap }: RowProps) {
       <div
         ref={laneRef}
         className={`lane ${drop ? "drop" : ""} ${offScreen ? "hidden-track" : ""}`}
-        style={{ width: laneW }}
+        style={{ width: laneW, marginLeft: LANE_PAD }}
         onDoubleClick={onDoubleClick}
         onPointerDown={(e) => {
           if (e.button === 0 && e.target === laneRef.current) useStore.getState().select(null);
@@ -307,43 +308,6 @@ function TrackRow({ track, index, count, fps, ppf, laneW, onSnap }: RowProps) {
   );
 }
 
-const DEFAULT_TEXT_STYLE: TextStyle = { position: "bottom", size: 5 };
-
-/** "Aa" in a text track's header: where its text sits over the frame and how big it is. */
-function TextStyleButton({ track }: { track: Track }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
-  const style = { ...DEFAULT_TEXT_STYLE, ...track.textStyle };
-  const set = (next: Partial<TextStyle>) =>
-    useStore.getState().edit((d) => {
-      const t = d.tracks.find((x) => x.id === track.id);
-      if (t) t.textStyle = { ...style, ...next };
-    });
-  return (
-    <>
-      <button ref={ref} className={`ghost ${open ? "on" : ""}`} onClick={() => setOpen(!open)} title="Text position and size">
-        Aa
-      </button>
-      <Popover anchor={ref} open={open} onClose={() => setOpen(false)} className="text-style-pop">
-        <div className="row">
-          <span className="dim small">Position</span>
-          <select value={style.position} onChange={(e) => set({ position: e.target.value as TextStyle["position"] })}>
-            <option value="bottom">Bottom</option>
-            <option value="center">Center</option>
-            <option value="top">Top</option>
-          </select>
-        </div>
-        <div className="row">
-          <span className="dim small">Size</span>
-          <NumberField min={1} max={50} step={0.5} width={60} value={style.size} onCommit={(size) => set({ size })} />
-          <span className="dim small">% of frame height</span>
-        </div>
-        <div className="dim small">Moves away from the captions of the screens when they would overlap.</div>
-      </Popover>
-    </>
-  );
-}
-
 function TrackHeader({ track, index, count }: { track: Track; index: number; count: number }) {
   const [editing, setEditing] = useState(false);
   const edit = useStore((s) => s.edit);
@@ -354,13 +318,7 @@ function TrackHeader({ track, index, count }: { track: Track; index: number; cou
       if (t) fn(t);
     });
 
-  const del = async () => {
-    const ok = await confirm(`Delete track "${track.name}" and its ${track.clips.length} clips?`, {
-      title: "Delete track",
-      kind: "warning",
-    });
-    if (ok) edit((d) => removeTrack(d, track.id));
-  };
+  const del = () => void deleteTrackWithConfirm(track);
 
   return (
     <div className="track-head" style={{ width: HEAD_W }}>
@@ -422,16 +380,13 @@ function TrackHeader({ track, index, count }: { track: Track; index: number; cou
             />
           </>
         ) : (
-          <>
-            {track.kind === "text" && <TextStyleButton track={track} />}
-            <button
-              className={`show-toggle ${onScreen ? "on" : ""}`}
-              onClick={() => toggleTrackOnScreen(track.id)}
-              title={onScreen ? "Shown in preview / export (click to hide)" : "Hidden from preview / export (click to show)"}
-            >
-              {onScreen ? "◉" : "◌"}
-            </button>
-          </>
+          <button
+            className={`show-toggle ${onScreen ? "on" : ""}`}
+            onClick={() => toggleTrackOnScreen(track.id)}
+            title={onScreen ? "Shown in preview / export (click to hide)" : "Hidden from preview / export (click to show)"}
+          >
+            {onScreen ? "◉" : "◌"}
+          </button>
         )}
         <button className="ghost" onClick={del} title="Delete track">
           ✕

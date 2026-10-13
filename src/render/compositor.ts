@@ -312,21 +312,21 @@ export function renderFrame(
     }
   }
 
-  // Text tracks: over the whole frame (across all screens), placed where they do not cover the captions.
-  const stack = { top: 0, center: 0, bottom: 0 };
+  // Text tracks: over the whole frame (across all screens), in the captions' style and stacked with them,
+  // moved off any caption they would cover.
+  const fontPx = (H * size) / 100;
   const obstacles: Rect[] = [...captionBoxes];
+  let stack = 0;
   for (const track of shownOverlays(project, preset)) {
     const clip = clipAt(track, frame, fps);
     const key = requiredKey(track);
     const v = clip && key ? clip[key] : null;
     if (v === undefined || v === null || v === "") continue;
-    const style = { position: "bottom" as const, size: 5, ...track.textStyle };
-    const fontPx = (H * style.size) / 100;
-    const laid = layoutTextBlock(ctx, String(v), { x: 0, y: 0, w: W, h: H }, style.position, fontPx, stack[style.position]);
-    const b = avoidBlocks(laid, style.position, obstacles, H, fontPx * 0.3);
+    const laid = layoutTextBlock(ctx, String(v), { x: 0, y: 0, w: W, h: H }, position, fontPx, stack);
+    const b = avoidBlocks(laid, position, obstacles, H, fontPx * 0.3);
     paintTextBlock(ctx, b);
     obstacles.push(b);
-    stack[style.position] += b.h + fontPx * 0.3;
+    stack += b.h + fontPx * 0.3;
   }
 
   if (preset.burnTimecode) {

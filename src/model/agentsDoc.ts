@@ -64,12 +64,11 @@ frames = ((HH×60 + MM)×60 + SS)×fps + FF. Example at 30 fps: \`"00:01:02:15"\
 |---|---|---|
 | \`id\` | string \`[A-Za-z0-9_-]+\` | unique; referenced by presets; never rename |
 | \`name\` | string | label shown in the app |
-| \`kind\` | \`"visual"\` \\| \`"audio"\` \\| \`"text"\` | visual: images/videos (picture, lighting references, …); audio: audio files only; text: text drawn over the whole frame (titles, narration…) |
+| \`kind\` | \`"visual"\` \\| \`"audio"\` \\| \`"text"\` | visual: images/videos (picture, lighting references, …); audio: audio files only; text: text drawn over the whole frame (titles, narration…) in the preset's caption style, stacked with the captions |
 | \`fields\` | array of Field | the track's table columns, in order |
 | \`clips\` | array of Clip | the rows: sorted by \`start\`, never overlapping |
 | \`mute\` | boolean, optional | audio tracks: excluded from preview and export |
 | \`volume\` | number, optional | audio track volume in dB (0 = unchanged) |
-| \`textStyle\` | object, optional | text tracks: \`{ "position": "top" \\| "center" \\| "bottom", "size": 5 }\` (size in % of the frame height; default bottom, 5). The text is drawn across all screens and moves off the screens' captions when it would cover them |
 
 ### Field (a column)
 

@@ -273,16 +273,7 @@ textarea:focus {
   font-size: 11px;
   color: var(--text);
 }
-.menu-list.text-style-pop {
-  gap: 6px;
-  padding: 8px;
-  min-width: 240px;
-}
-.text-style-pop .row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+
 .dot {
   background: var(--kind, var(--dim));
 }
@@ -1318,4 +1309,10 @@ table.grid td.timecell .row-tools button {
 .asset.selected {
   border-color: var(--sel);
   box-shadow: 0 0 0 1px var(--sel);
+}
+
+.subtab-rename {
+  width: 120px;
+  padding: 0 4px;
+  font-size: 12px;
 }
