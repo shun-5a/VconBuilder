@@ -627,13 +627,27 @@ fn open_path(app: tauri::AppHandle, window: tauri::Window, path: String) -> Resu
     result.map(|_| ()).map_err(err)
 }
 
+/// Explorer's argument for selecting a file: `/select,"<path with backslashes>"`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn explorer_select_arg(path: &str) -> String {
+    format!(
+        "/select,\"{}\"",
+        path.replace('/', "\\").trim_end_matches('\\')
+    )
+}
+
 /// Shows a file in Explorer / Finder.
 #[tauri::command]
 fn reveal_path(path: String) -> Result<(), String> {
+    // Explorer only understands `/select,"C:\a b\c.vcb"`: with a normal arg, Rust quotes the whole
+    // `"/select,C:\a b\c.vcb"` when the path has spaces, and Explorer then opens the user's home folder.
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.replace('/', "\\")))
-        .spawn();
+    let result = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .raw_arg(explorer_select_arg(&path))
+            .spawn()
+    };
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open")
         .args(["-R", &path])
@@ -956,6 +970,14 @@ mod tests {
         assert!(to.join("a.vcb").is_file());
         fs::remove_dir_all(&from).unwrap();
         fs::remove_dir_all(&to).unwrap();
+    }
+
+    #[test]
+    fn explorer_select_quotes_only_the_path() {
+        assert_eq!(
+            explorer_select_arg("C:/Users/me/My Show/My Show.vcb"),
+            r#"/select,"C:\Users\me\My Show\My Show.vcb""#
+        );
     }
 
     #[test]
