@@ -49,7 +49,7 @@ The window has the preview (top left), the timeline (bottom left) and the right 
 - Editing times pushes / pulls the following rows like a spreadsheet
 - Hovering a row shows ▲ / ▼ to swap it with the row above / below (both keep their lengths) and ✕ to delete it
 - Media cells are filled from a list with thumbnails, grouped (and collapsible) like the Assets tab
-- ◉ in a column header shows, for the current preset, an extra media column as a small inset in a corner, or a text column as a caption
+- ◉ in a column header shows, for the current preset, an extra media column as a small inset in a corner, or a text column as a caption (captions sit in the top-left corner of each screen)
 
 ### Assets tab
 

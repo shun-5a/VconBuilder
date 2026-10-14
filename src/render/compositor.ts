@@ -160,7 +160,13 @@ export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
 type TextPosition = "top" | "center" | "bottom";
 
 /** A laid-out caption / text band: its background box (x, y, w, h) in frame pixels and its lines. */
-type TextBlock = Rect & { lines: string[]; fontPx: number; cx: number };
+type TextBlock = Rect & { lines: string[]; fontPx: number; cx: number; align: "center" | "left" };
+
+/**
+ * left: a band in the top-left corner (screen captions), `top` px below the screen's top edge.
+ * center: a centred band at `position` (text tracks).
+ */
+type BlockOptions = { align: "center" } | { align: "left"; top: number };
 
 /** Lays out `text` in a band of `r` (wrapped to 90% of its width), `stackOffset` px away from the edge. */
 function layoutTextBlock(
@@ -170,18 +176,25 @@ function layoutTextBlock(
   position: TextPosition,
   fontPx: number,
   stackOffset: number,
+  opts: BlockOptions = { align: "center" },
 ): TextBlock {
   ctx.font = `600 ${fontPx}px ${FONT_FAMILY}`;
-  const lines = wrapText(ctx, text, r.w * 0.9);
   const padX = fontPx * 0.5;
+  const left = opts.align === "left";
+  // Corner captions stay narrower, so they cover less of the picture.
+  const lines = wrapText(ctx, text, r.w * (left ? 0.6 : 0.9));
   const h = lines.length * fontPx * 1.35 + fontPx * 0.5;
+  const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
+  if (opts.align === "left") {
+    const x = r.x + r.h * 0.02;
+    return { x, y: r.y + opts.top + stackOffset, w, h, lines, fontPx, cx: x + padX, align: "left" };
+  }
   const margin = r.h * 0.05;
   let y: number;
   if (position === "top") y = r.y + margin + stackOffset;
   else if (position === "center") y = r.y + (r.h - h) / 2 + stackOffset;
   else y = r.y + r.h - margin - h - stackOffset;
-  const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + padX * 2;
-  return { x: r.x + (r.w - w) / 2, y, w, h, lines, fontPx, cx: r.x + r.w / 2 };
+  return { x: r.x + (r.w - w) / 2, y, w, h, lines, fontPx, cx: r.x + r.w / 2, align: "center" };
 }
 
 function paintTextBlock(ctx: CanvasRenderingContext2D, b: TextBlock) {
@@ -189,7 +202,7 @@ function paintTextBlock(ctx: CanvasRenderingContext2D, b: TextBlock) {
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(b.x, b.y, b.w, b.h);
   ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
+  ctx.textAlign = b.align;
   ctx.textBaseline = "top";
   const lh = b.fontPx * 1.35;
   for (const [i, l] of b.lines.entries()) ctx.fillText(l, b.cx, b.y + b.fontPx * 0.25 + i * lh + b.fontPx * 0.12);
@@ -291,9 +304,11 @@ export function renderFrame(
     ctx.restore();
   });
 
-  // Captions: the preset's caption columns of each track on screen, stacked inside that screen in column order.
+  // Captions: the preset's caption columns of each track on screen, in the screen's top-left corner, stacked
+  // downwards in column order (below the track name when names are shown). Text tracks use `position`.
   const captionBoxes: Rect[] = [];
   const { position, size } = preset.captionStyle;
+  const labels = preset.layout === "grid" && preset.showLabels && shown.length > 1;
   for (const track of shown) {
     const clip = clipAt(track, frame, fps);
     if (!clip) continue;
@@ -302,10 +317,11 @@ export function renderFrame(
       .filter((v) => v !== undefined && v !== null && v !== "")
       .map(String);
     const r = rectOf.get(track.id)!;
-    // Bottom captions are stacked upwards, so draw the last column first to keep reading order top-down.
+    // The track name label (drawLabel above) ends at about 7.5% of the screen height.
+    const top = labels ? r.h * 0.09 : r.h * 0.02;
     let off = 0;
-    for (const text of position === "bottom" ? texts.reverse() : texts) {
-      const b = layoutTextBlock(ctx, text, r, position, (r.h * size) / 100, off);
+    for (const text of texts) {
+      const b = layoutTextBlock(ctx, text, r, "top", (r.h * size) / 100, off, { align: "left", top });
       paintTextBlock(ctx, b);
       captionBoxes.push(b);
       off += b.h + b.fontPx * 0.3;

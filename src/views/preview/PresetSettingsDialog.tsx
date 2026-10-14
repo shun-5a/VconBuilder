@@ -158,18 +158,6 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
 
             <label>Captions</label>
             <div className="row">
-              <select
-                value={preset.captionStyle.position}
-                onChange={(e) =>
-                  updatePreview((p) => {
-                    p.captionStyle.position = e.target.value as "top" | "center" | "bottom";
-                  })
-                }
-              >
-                <option value="bottom">Bottom</option>
-                <option value="center">Center</option>
-                <option value="top">Top</option>
-              </select>
               <NumberField
                 min={0.5}
                 max={20}
@@ -183,7 +171,25 @@ export function PresetSettingsDialog({ onClose }: { onClose: () => void }) {
                   })
                 }
               />
-              <span className="dim small">% of screen height</span>
+              <span className="dim small">% of screen height · captions sit in each screen's top-left corner</span>
+            </div>
+
+            <label>Text tracks</label>
+            <div className="row">
+              <select
+                value={preset.captionStyle.position}
+                title="Where text tracks are drawn over the whole frame (same size as the captions)"
+                onChange={(e) =>
+                  updatePreview((p) => {
+                    p.captionStyle.position = e.target.value as "top" | "center" | "bottom";
+                  })
+                }
+              >
+                <option value="bottom">Bottom</option>
+                <option value="center">Center</option>
+                <option value="top">Top</option>
+              </select>
+              <span className="dim small">across all screens</span>
             </div>
 
             <label>Insets</label>
