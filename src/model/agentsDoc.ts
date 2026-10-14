@@ -115,7 +115,7 @@ captions and a CG version with colour notes.
 | \`video\` | object | \`{ "bitrate": 8000000, "bitrateMode": "variable" }\` | bits per second; \`"variable"\` or \`"constant"\` |
 | \`audio\` | object | \`{ "enabled": true, "bitrate": 192000 }\` | mix of the audible audio tracks |
 | \`insetStyle\` | object | \`{ "position": "bottom-right", "size": 20 }\` | corner \`"top-left"\`/\`"top-right"\`/\`"bottom-left"\`/\`"bottom-right"\` (several insets stack away from it); size = inset width in % of the screen width |
-| \`captionStyle\` | object | \`{ "position": "bottom", "size": 4 }\` | position \`"top"\`/\`"center"\`/\`"bottom"\`; size in % of the screen height |
+| \`captionStyle\` | object | \`{ "position": "bottom", "size": 4 }\` | size in % of the screen height (captions and text tracks). Captions always sit in each screen's top-left corner; position \`"top"\`/\`"center"\`/\`"bottom"\` places the text tracks |
 | \`burnTimecode\` | boolean | \`true\` | timecode in the top right corner |
 | \`showLabels\` | boolean | \`true\` | track names on screens in a grid |
 
