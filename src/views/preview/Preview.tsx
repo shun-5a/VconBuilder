@@ -3,13 +3,20 @@ import { assetUrl } from "../../io/backend";
 import { projectEndFrame } from "../../model/ops";
 import { framesToTc } from "../../model/timecode";
 import { renderFrame, resolvePreset, type Visual } from "../../render/compositor";
-import { getImage, mediaKind, onMediaUpdate, pauseVideosExcept, syncVideo } from "../../render/media";
+import { getImage, isMediaPending, mediaKind, onMediaUpdate, pauseVideosExcept, syncVideo } from "../../render/media";
 import { currentPreset, useStore } from "../../store/store";
 import { PresetBar } from "./PresetBar";
 import { seek, togglePlay } from "./player";
 
+/** How long the previous frame stays up while waiting for media (a broken file must not freeze the preview). */
+const MAX_HOLD_MS = 5000;
+
 export function Preview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Frames are composed off-screen and shown once their media is ready, so seeking never flashes black.
+  const backRef = useRef<HTMLCanvasElement | null>(null);
+  const waitingSince = useRef<number | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const project = useStore((s) => s.project)!;
   const dir = useStore((s) => s.dir)!;
   const playhead = useStore((s) => s.playhead);
@@ -25,20 +32,45 @@ export function Preview() {
     if (!canvas) return;
     if (canvas.width !== preset.width) canvas.width = preset.width;
     if (canvas.height !== preset.height) canvas.height = preset.height;
-    const ctx = canvas.getContext("2d")!;
+    backRef.current ??= document.createElement("canvas");
+    const back = backRef.current;
+    if (back.width !== preset.width) back.width = preset.width;
+    if (back.height !== preset.height) back.height = preset.height;
     const activeVideos = new Set<string>();
-    renderFrame(ctx, project, preset, playhead, (ref, seconds): Visual | null => {
+    let waiting = false;
+    renderFrame(back.getContext("2d")!, project, preset, playhead, (ref, seconds): Visual | null => {
       const url = assetUrl(dir, ref);
-      if (mediaKind(ref) === "image") return getImage(url);
-      activeVideos.add(url);
-      return syncVideo(url, seconds, playing);
+      let visual: Visual | null;
+      if (mediaKind(ref) === "image") visual = getImage(url);
+      else {
+        activeVideos.add(url);
+        visual = syncVideo(url, seconds, playing);
+      }
+      if (!visual && isMediaPending(url)) waiting = true;
+      return visual;
     });
     pauseVideosExcept(activeVideos);
+
+    clearTimeout(holdTimer.current);
+    if (waiting) {
+      // Keep showing the previous frame; onMediaUpdate redraws when the media arrives.
+      waitingSince.current ??= performance.now();
+      const left = MAX_HOLD_MS - (performance.now() - waitingSince.current);
+      if (left > 0) {
+        holdTimer.current = setTimeout(() => drawRef.current(), left);
+        return;
+      }
+    } else {
+      waitingSince.current = null;
+    }
+    canvas.getContext("2d")!.drawImage(back, 0, 0);
   };
 
   useEffect(() => {
     drawRef.current();
   });
+
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
 
   useEffect(() => {
     let pending = 0;

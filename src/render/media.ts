@@ -43,11 +43,11 @@ const notify = () => {
 /** Drops everything cached for a media URL (the file changed on disk) and redraws. */
 export function forgetMedia(url: string) {
   const img = images.get(url);
-  if (img) img.onload = null;
+  if (img) img.onload = img.onerror = null;
   images.delete(url);
   const v = videos.get(url);
   if (v) {
-    v.onseeked = v.onloadeddata = null;
+    v.onseeked = v.onloadeddata = v.onerror = null;
     v.pause();
     v.removeAttribute("src");
     v.load();
@@ -68,6 +68,7 @@ export function getImage(url: string): HTMLImageElement | null {
     img = new Image();
     img.decoding = "async";
     img.onload = notify;
+    img.onerror = notify;
     img.src = url;
     images.set(url, img);
   }
@@ -92,6 +93,7 @@ function getVideoEl(url: string): HTMLVideoElement {
     v.playsInline = true;
     v.onseeked = notify;
     v.onloadeddata = notify;
+    v.onerror = notify;
     v.src = url;
     videos.set(url, v);
   }
@@ -105,6 +107,9 @@ function getVideoEl(url: string): HTMLVideoElement {
 export function syncVideo(url: string, seconds: number, playing: boolean): HTMLVideoElement | null {
   const v = getVideoEl(url);
   const t = Math.max(0, seconds);
+  // Checked before seeking: the frame on hand stays usable until the new one arrives, so a drag along the
+  // timeline keeps showing frames instead of waiting for it to stop.
+  const ready = v.readyState >= 2;
   if (playing) {
     if (Math.abs(v.currentTime - t) > 0.25) v.currentTime = t;
     if (v.paused) v.play().catch(() => {});
@@ -112,7 +117,15 @@ export function syncVideo(url: string, seconds: number, playing: boolean): HTMLV
     if (!v.paused) v.pause();
     if (Math.abs(v.currentTime - t) > 0.01 && !v.seeking) v.currentTime = t;
   }
-  return v.readyState >= 2 ? v : null;
+  return ready ? v : null;
+}
+
+/** Whether a frame / image is still on its way (seeking, loading), as opposed to ready or failed. */
+export function isMediaPending(url: string): boolean {
+  const img = images.get(url);
+  if (img) return !img.complete;
+  const v = videos.get(url);
+  return !!v && !v.error && v.readyState < 2;
 }
 
 /** Pauses preview videos not in `active`. */
